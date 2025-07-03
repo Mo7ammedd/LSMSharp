@@ -2,16 +2,10 @@
 using LSMTree;
 
 namespace LSMTree
-{
-    class Program
-    {        static async Task Main(string[] args)
+{    class Program
+    {
+        static async Task Main(string[] args)
         {
-            if (args.Length > 0 && args[0] == "test")
-            {
-                await LSMTree.Tests.SimpleTest.RunAsync();
-                return;
-            }
-
             Console.WriteLine("LSM-Tree Storage Engine Demo");
             Console.WriteLine("============================");
 
