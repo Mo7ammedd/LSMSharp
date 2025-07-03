@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <AssemblyName>LSMTree.Tests</AssemblyName>
+    <RootNamespace>LSMTree.Tests</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="../Core/*.cs" />
+    <Compile Include="../WAL/*.cs" />
+    <Compile Include="../Memtable/*.cs" />
+    <Compile Include="../SkipList/*.cs" />
+    <Compile Include="../SSTable/*.cs" />
+    <Compile Include="../BloomFilter/*.cs" />
+    <Compile Include="../Compaction/*.cs" />
+    <Compile Include="../Utils/*.cs" />
+    <Compile Include="../LSMTreeDB.cs" />
+  </ItemGroup>
+
+</Project>
