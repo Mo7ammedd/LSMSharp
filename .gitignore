@@ -1,0 +1,37 @@
+# .NET build artifacts
+bin/
+obj/
+*.dll
+*.pdb
+*.exe
+
+# Build results
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+bld/
+
+# NuGet packages
+*.nupkg
+
+# Visual Studio cache files
+*.suo
+*.user
+.vs/
+
+# JetBrains Rider
+.idea/
+
+# VS Code
+.vscode/
+
+# LSM-Tree runtime files
+lsmdb/
+*.wal
+*.sst
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
