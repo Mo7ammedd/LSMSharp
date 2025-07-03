@@ -26,7 +26,12 @@ namespace LSMTree.Tests
             await DeleteOperationsTest(db);
             await RangeQueryTest(db);
             await TransactionConsistencyTest(db);
-            await DataIntegrityTest(db);
+            
+            // Create a separate instance for data integrity test to avoid conflicts
+            CleanupDirectory(dbPath);
+            using var integrityDb = await LSMTreeDB.OpenAsync(dbPath);
+            await DataIntegrityTest(integrityDb);
+            
             await EdgeCaseTests(db);
 
             Console.WriteLine("\nFunctional tests completed!");
@@ -247,21 +252,19 @@ namespace LSMTree.Tests
             var testData = new Dictionary<string, byte[]>();
             var random = new Random(42); // Fixed seed for reproducibility
 
-            // Generate test data with checksums
+            // Generate test data with simple validation pattern
             for (int i = 0; i < 1000; i++)
             {
                 var key = $"integrity_{i:D4}";
                 var data = new byte[256];
                 random.NextBytes(data);
                 
-                // Add checksum to data
-                var checksum = ComputeSimpleChecksum(data);
-                var valueWithChecksum = new byte[data.Length + 4];
-                Array.Copy(data, 0, valueWithChecksum, 0, data.Length);
-                Array.Copy(BitConverter.GetBytes(checksum), 0, valueWithChecksum, data.Length, 4);
+                // Add simple pattern for validation at the beginning
+                var pattern = BitConverter.GetBytes(i);
+                Array.Copy(pattern, 0, data, 0, Math.Min(pattern.Length, data.Length));
                 
-                testData[key] = valueWithChecksum;
-                await db.SetAsync(key, valueWithChecksum);
+                testData[key] = data;
+                await db.SetAsync(key, data);
             }
 
             // Force flush and compaction
@@ -281,21 +284,13 @@ namespace LSMTree.Tests
 
             foreach (var kvp in testData)
             {
-                var (found, value) = results[index++];
+                var (found, value) = results[index];
                 
-                if (found && value.Length == kvp.Value.Length)
+                if (found && value.SequenceEqual(kvp.Value))
                 {
-                    var originalData = new byte[value.Length - 4];
-                    Array.Copy(value, 0, originalData, 0, originalData.Length);
-                    
-                    var storedChecksum = BitConverter.ToInt32(value, value.Length - 4);
-                    var computedChecksum = ComputeSimpleChecksum(originalData);
-                    
-                    if (storedChecksum == computedChecksum && value.SequenceEqual(kvp.Value))
-                    {
-                        validCount++;
-                    }
+                    validCount++;
                 }
+                index++;
             }
 
             Console.WriteLine($"Data integrity: {validCount}/{testData.Count} records verified ({validCount * 100.0 / testData.Count:F1}%)");

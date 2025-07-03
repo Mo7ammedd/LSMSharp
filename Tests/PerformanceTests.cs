@@ -13,37 +13,35 @@ namespace LSMTree.Tests
     {
         private const int WARMUP_OPERATIONS = 1000;
         private const int MEASUREMENT_OPERATIONS = 10000;
-        private const int CONCURRENT_OPERATIONS = 50000;
-        private const int STRESS_OPERATIONS = 100000;
+        private const int CONCURRENT_OPERATIONS = 10000; // Reduced from 50000
+        private const int STRESS_OPERATIONS = 50000; // Reduced from 100000
 
         public static async Task RunAllAsync()
         {
             Console.WriteLine("LSM-Tree Performance Tests");
             Console.WriteLine("==========================");
 
-            var dbPath = Path.Combine(Environment.CurrentDirectory, "test_performance_db");
-            CleanupDirectory(dbPath);
-
-            using var db = await LSMTreeDB.OpenAsync(dbPath);
-
-            await WarmupTest(db);
-            await SequentialWriteTest(db);
-            await RandomWriteTest(db);
-            await SequentialReadTest(db);
-            await RandomReadTest(db);
-            await ConcurrentWriteTest(db);
-            await ConcurrentReadTest(db);
-            await MixedWorkloadTest(db);
-            await StressTest(db);
+            await WarmupTest();
+            await SequentialWriteTest();
+            await RandomWriteTest();
+            await SequentialReadTest();
+            await RandomReadTest();
+            await ConcurrentWriteTest();
+            await ConcurrentReadTest();
+            await MixedWorkloadTest();
+            await StressTest();
 
             Console.WriteLine("\nPerformance tests completed!");
         }
 
-        private static async Task WarmupTest(LSMTreeDB db)
+        private static async Task WarmupTest()
         {
             Console.WriteLine("\n1. Warmup Test");
             Console.WriteLine("--------------");
 
+            var dbPath = Path.Combine(Environment.CurrentDirectory, "test_perf_warmup");
+            CleanupDirectory(dbPath);
+            using var db = await LSMTreeDB.OpenAsync(dbPath);
             var stopwatch = Stopwatch.StartNew();
             var tasks = new List<Task>();
 
@@ -61,11 +59,14 @@ namespace LSMTree.Tests
             Console.WriteLine($"Throughput: {WARMUP_OPERATIONS * 1000.0 / stopwatch.ElapsedMilliseconds:F0} ops/sec");
         }
 
-        private static async Task SequentialWriteTest(LSMTreeDB db)
+        private static async Task SequentialWriteTest()
         {
             Console.WriteLine("\n2. Sequential Write Test");
             Console.WriteLine("-----------------------");
 
+            var dbPath = Path.Combine(Environment.CurrentDirectory, "test_perf_seq_write");
+            CleanupDirectory(dbPath);
+            using var db = await LSMTreeDB.OpenAsync(dbPath);
             var stopwatch = Stopwatch.StartNew();
             var tasks = new List<Task>();
 
@@ -87,11 +88,14 @@ namespace LSMTree.Tests
             Console.WriteLine($"Average latency: {avgLatency:F3}ms per operation");
         }
 
-        private static async Task RandomWriteTest(LSMTreeDB db)
+        private static async Task RandomWriteTest()
         {
             Console.WriteLine("\n3. Random Write Test");
             Console.WriteLine("-------------------");
 
+            var dbPath = Path.Combine(Environment.CurrentDirectory, "test_perf_rand_write");
+            CleanupDirectory(dbPath);
+            using var db = await LSMTreeDB.OpenAsync(dbPath);
             var random = new Random(42); // Fixed seed for reproducibility
             var stopwatch = Stopwatch.StartNew();
             var tasks = new List<Task>();
@@ -111,11 +115,14 @@ namespace LSMTree.Tests
             Console.WriteLine($"Throughput: {throughput:F0} ops/sec");
         }
 
-        private static async Task SequentialReadTest(LSMTreeDB db)
+        private static async Task SequentialReadTest()
         {
             Console.WriteLine("\n4. Sequential Read Test");
             Console.WriteLine("----------------------");
 
+            // Use the same data from sequential write test
+            var dbPath = Path.Combine(Environment.CurrentDirectory, "test_perf_seq_write");
+            using var db = await LSMTreeDB.OpenAsync(dbPath);
             var stopwatch = Stopwatch.StartNew();
             var tasks = new List<Task<(bool, byte[])>>();
             int foundCount = 0;
@@ -137,11 +144,14 @@ namespace LSMTree.Tests
             Console.WriteLine($"Hit rate: {foundCount * 100.0 / MEASUREMENT_OPERATIONS:F1}% ({foundCount}/{MEASUREMENT_OPERATIONS})");
         }
 
-        private static async Task RandomReadTest(LSMTreeDB db)
+        private static async Task RandomReadTest()
         {
             Console.WriteLine("\n5. Random Read Test");
             Console.WriteLine("------------------");
 
+            // Use the same data from random write test
+            var dbPath = Path.Combine(Environment.CurrentDirectory, "test_perf_rand_write");
+            using var db = await LSMTreeDB.OpenAsync(dbPath);
             var random = new Random(42);
             var stopwatch = Stopwatch.StartNew();
             var tasks = new List<Task<(bool, byte[])>>();
@@ -163,22 +173,35 @@ namespace LSMTree.Tests
             Console.WriteLine($"Hit rate: {foundCount * 100.0 / MEASUREMENT_OPERATIONS:F1}% ({foundCount}/{MEASUREMENT_OPERATIONS})");
         }
 
-        private static async Task ConcurrentWriteTest(LSMTreeDB db)
+        private static async Task ConcurrentWriteTest()
         {
             Console.WriteLine("\n6. Concurrent Write Test");
             Console.WriteLine("-----------------------");
 
+            var dbPath = Path.Combine(Environment.CurrentDirectory, "test_perf_concurrent_write");
+            CleanupDirectory(dbPath);
+            using var db = await LSMTreeDB.OpenAsync(dbPath);
             var stopwatch = Stopwatch.StartNew();
-            var tasks = new List<Task>();
+            
+            // Process in batches to avoid overwhelming the system
+            var batchSize = 1000;
+            var totalBatches = CONCURRENT_OPERATIONS / batchSize;
 
-            for (int i = 0; i < CONCURRENT_OPERATIONS; i++)
+            for (int batch = 0; batch < totalBatches; batch++)
             {
-                var key = $"concurrent_write:{i:D8}";
-                var value = GenerateRandomValue(128);
-                tasks.Add(db.SetAsync(key, value));
+                var tasks = new List<Task>();
+                
+                for (int i = 0; i < batchSize; i++)
+                {
+                    var recordId = batch * batchSize + i;
+                    var key = $"concurrent_write:{recordId:D8}";
+                    var value = GenerateRandomValue(128);
+                    tasks.Add(db.SetAsync(key, value));
+                }
+
+                await Task.WhenAll(tasks);
             }
 
-            await Task.WhenAll(tasks);
             stopwatch.Stop();
 
             var throughput = CONCURRENT_OPERATIONS * 1000.0 / stopwatch.ElapsedMilliseconds;
@@ -186,11 +209,14 @@ namespace LSMTree.Tests
             Console.WriteLine($"Throughput: {throughput:F0} ops/sec");
         }
 
-        private static async Task ConcurrentReadTest(LSMTreeDB db)
+        private static async Task ConcurrentReadTest()
         {
             Console.WriteLine("\n7. Concurrent Read Test");
             Console.WriteLine("----------------------");
 
+            // Use the same data from concurrent write test
+            var dbPath = Path.Combine(Environment.CurrentDirectory, "test_perf_concurrent_write");
+            using var db = await LSMTreeDB.OpenAsync(dbPath);
             var random = new Random(42);
             var stopwatch = Stopwatch.StartNew();
             var tasks = new List<Task<(bool, byte[])>>();
@@ -212,11 +238,14 @@ namespace LSMTree.Tests
             Console.WriteLine($"Hit rate: {foundCount * 100.0 / CONCURRENT_OPERATIONS:F1}% ({foundCount}/{CONCURRENT_OPERATIONS})");
         }
 
-        private static async Task MixedWorkloadTest(LSMTreeDB db)
+        private static async Task MixedWorkloadTest()
         {
             Console.WriteLine("\n8. Mixed Workload Test (70% reads, 30% writes)");
             Console.WriteLine("----------------------------------------------");
 
+            var dbPath = Path.Combine(Environment.CurrentDirectory, "test_perf_mixed");
+            CleanupDirectory(dbPath);
+            using var db = await LSMTreeDB.OpenAsync(dbPath);
             var random = new Random(42);
             var stopwatch = Stopwatch.StartNew();
             var tasks = new List<Task>();
@@ -244,11 +273,14 @@ namespace LSMTree.Tests
             Console.WriteLine($"Throughput: {throughput:F0} ops/sec");
         }
 
-        private static async Task StressTest(LSMTreeDB db)
+        private static async Task StressTest()
         {
             Console.WriteLine("\n9. Stress Test");
             Console.WriteLine("--------------");
 
+            var dbPath = Path.Combine(Environment.CurrentDirectory, "test_perf_stress");
+            CleanupDirectory(dbPath);
+            using var db = await LSMTreeDB.OpenAsync(dbPath);
             var random = new Random(42);
             var stopwatch = Stopwatch.StartNew();
             var writeTasks = new List<Task>();

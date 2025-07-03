@@ -32,9 +32,6 @@ namespace LSMTree.WAL
 
         public async Task WriteAsync(params Entry[] entries)
         {
-            if (_disposed)
-                throw new ObjectDisposedException(nameof(WriteAheadLog));
-
             if (entries == null || entries.Length == 0)
                 return;
 
@@ -42,6 +39,9 @@ namespace LSMTree.WAL
             {
                 lock (_writeLock)
                 {
+                    if (_disposed)
+                        throw new ObjectDisposedException(nameof(WriteAheadLog));
+
                     foreach (var entry in entries)
                     {
                         WriteEntry(entry);
