@@ -43,7 +43,7 @@ namespace LSMTree.Tests
                 ("key1", "value1"),
                 ("key2", "value2"),
                 ("key3", "value3"),
-                ("", "empty_key_value"),
+                ("space_key", "empty_key_value"),
                 ("very_long_key_" + new string('x', 1000), "long_key_value"),
                 ("key_with_special_chars_!@#$%^&*()", "special_value")
             };

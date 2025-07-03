@@ -375,13 +375,13 @@ namespace LSMTree.Tests
 
         private static byte[] GenerateThreadValue(int threadId, int recordId)
         {
-            var data = $"Thread-{threadId}|Record-{recordId}|{new string('A' + (threadId % 26), 50)}";
+            var data = $"Thread-{threadId}|Record-{recordId}|{new string((char)('A' + (threadId % 26)), 50)}";
             return Encoding.UTF8.GetBytes(data);
         }
 
         private static byte[] GenerateLevelValue(int level, int recordId)
         {
-            var data = $"Level-{level}|Record-{recordId}|Version-{DateTime.UtcNow.Ticks}|{new string('0' + level, 100)}";
+            var data = $"Level-{level}|Record-{recordId}|Version-{DateTime.UtcNow.Ticks}|{new string((char)('0' + level), 100)}";
             return Encoding.UTF8.GetBytes(data);
         }
 
