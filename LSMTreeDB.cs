@@ -9,7 +9,7 @@ using LSMTree.Compaction;
 
 namespace LSMTree
 {
-    public class LSMTreeDB : ILSMTree
+    public class LSMTreeDB : ILSMTree, IAsyncDisposable
     {
         private readonly string _directory;
         private readonly int _memtableThreshold;
@@ -66,6 +66,8 @@ namespace LSMTree
             IMemtable memtableToUse;
             lock (_memtableLock)
             {
+                if (_disposed)
+                    throw new ObjectDisposedException(nameof(LSMTreeDB));
                 memtableToUse = _activeMemtable;
             }
 
@@ -296,13 +298,20 @@ namespace LSMTree
 
         public void Dispose()
         {
+            DisposeAsync().AsTask().Wait(TimeSpan.FromSeconds(30));
+        }
+
+        public async ValueTask DisposeAsync()
+        {
             if (_disposed)
                 return;
+
+            _disposed = true;
 
             try
             {
                 // Flush any remaining data
-                FlushAsync().Wait(TimeSpan.FromSeconds(30));
+                await FlushAsync();
             }
             catch
             {
@@ -313,8 +322,6 @@ namespace LSMTree
             _flushingMemtable?.Dispose();
             _levelManager?.Dispose();
             _flushSemaphore?.Dispose();
-
-            _disposed = true;
         }
     }
 }
