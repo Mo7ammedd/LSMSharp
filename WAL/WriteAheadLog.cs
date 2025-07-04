@@ -30,103 +30,97 @@ namespace LSMTree.WAL
             _writer = new BinaryWriter(_fileStream, Encoding.UTF8, leaveOpen: true);
         }
 
-        public async Task WriteAsync(params Entry[] entries)
+        public Task WriteAsync(params Entry[] entries)
         {
             if (entries == null || entries.Length == 0)
-                return;
+                return Task.CompletedTask;
 
-            await Task.Run(() =>
+            lock (_writeLock)
             {
-                lock (_writeLock)
-                {
-                    if (_disposed)
-                        throw new ObjectDisposedException(nameof(WriteAheadLog));
+                if (_disposed)
+                    throw new ObjectDisposedException(nameof(WriteAheadLog));
 
-                    foreach (var entry in entries)
-                    {
-                        WriteEntry(entry);
-                    }
-                    _writer.Flush();
-                    _fileStream.Flush(true); // Force sync to disk
+                foreach (var entry in entries)
+                {
+                    WriteEntry(entry);
                 }
-            });
+                _writer.Flush();
+                _fileStream.Flush(true); // Force sync to disk
+            }
+            
+            return Task.CompletedTask;
         }
 
-        public async Task<IEnumerable<Entry>> ReadAsync()
+        public Task<IEnumerable<Entry>> ReadAsync()
         {
             if (_disposed)
                 throw new ObjectDisposedException(nameof(WriteAheadLog));
 
-            return await Task.Run(() =>
+            var entries = new List<Entry>();
+
+            if (!File.Exists(_filePath))
+                return Task.FromResult<IEnumerable<Entry>>(entries);
+
+            using var readStream = new FileStream(_filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+            using var reader = new BinaryReader(readStream, Encoding.UTF8);
+
+            while (readStream.Position < readStream.Length)
             {
-                var entries = new List<Entry>();
-
-                if (!File.Exists(_filePath))
-                    return entries;
-
-                using var readStream = new FileStream(_filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-                using var reader = new BinaryReader(readStream, Encoding.UTF8);
-
-                while (readStream.Position < readStream.Length)
+                try
                 {
-                    try
-                    {
-                        var entry = ReadEntry(reader);
-                        entries.Add(entry);
-                    }
-                    catch (EndOfStreamException)
-                    {
-                        // End of file reached
-                        break;
-                    }
-                    catch (Exception)
-                    {
-                        // Corrupted entry, stop reading
-                        break;
-                    }
+                    var entry = ReadEntry(reader);
+                    entries.Add(entry);
                 }
+                catch (EndOfStreamException)
+                {
+                    // End of file reached
+                    break;
+                }
+                catch (Exception)
+                {
+                    // Corrupted entry, stop reading
+                    break;
+                }
+            }
 
-                return entries;
-            });
+            return Task.FromResult<IEnumerable<Entry>>(entries);
         }
 
-        public async Task DeleteAsync()
+        public Task DeleteAsync()
         {
             if (_disposed)
-                return;
+                return Task.CompletedTask;
 
-            await Task.Run(() =>
+            lock (_writeLock)
             {
-                lock (_writeLock)
+                if (!_disposed)
                 {
-                    if (!_disposed)
+                    _writer?.Close();
+                    _fileStream?.Close();
+                    _disposed = true;
+                    
+                    if (File.Exists(_filePath))
                     {
-                        _writer?.Close();
-                        _fileStream?.Close();
-                        _disposed = true;
-                        
-                        if (File.Exists(_filePath))
-                        {
-                            File.Delete(_filePath);
-                        }
+                        File.Delete(_filePath);
                     }
                 }
-            });
+            }
+            
+            return Task.CompletedTask;
         }
 
-        public async Task SyncAsync()
+        public Task SyncAsync()
         {
             if (_disposed)
                 throw new ObjectDisposedException(nameof(WriteAheadLog));
 
-            await Task.Run(() =>
+            lock (_writeLock)
             {
-                lock (_writeLock)
-                {
-                    _writer.Flush();
-                    _fileStream.Flush(true);
-                }
-            });
+                _writer.Flush();
+                _fileStream.Flush(true);
+            }
+            
+            return Task.CompletedTask;
         }
 
         private void WriteEntry(Entry entry)
