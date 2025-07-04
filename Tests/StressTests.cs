@@ -22,7 +22,7 @@ namespace LSMTree.Tests
             var dbPath = Path.Combine(Environment.CurrentDirectory, "test_stress_db");
             CleanupDirectory(dbPath);
 
-            using var db = await LSMTreeDB.OpenAsync(dbPath);
+            await using var db = await LSMTreeDB.OpenAsync(dbPath);
 
             await HeavyLoadTest(db);
             await LargeValueTest(db);
@@ -291,7 +291,7 @@ namespace LSMTree.Tests
             var testData = new Dictionary<string, byte[]>();
             
             {
-                using var db = await LSMTreeDB.OpenAsync(dbPath);
+                await using var db = await LSMTreeDB.OpenAsync(dbPath);
                 
                 Console.WriteLine("Writing test data before 'crash'...");
                 var tasks = new List<Task>();
@@ -310,7 +310,7 @@ namespace LSMTree.Tests
 
             // Reopen database (simulate recovery)
             Console.WriteLine("Reopening database for recovery...");
-            using var recoveredDb = await LSMTreeDB.OpenAsync(dbPath);
+            await using var recoveredDb = await LSMTreeDB.OpenAsync(dbPath);
 
             // Verify data integrity after recovery
             Console.WriteLine("Verifying data after recovery...");
