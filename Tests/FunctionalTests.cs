@@ -19,7 +19,7 @@ namespace LSMTree.Tests
             var dbPath = Path.Combine(Environment.CurrentDirectory, "test_functional_db");
             CleanupDirectory(dbPath);
 
-            using var db = await LSMTreeDB.OpenAsync(dbPath);
+            await using var db = await LSMTreeDB.OpenAsync(dbPath);
 
             await BasicOperationsTest(db);
             await UpdateOperationsTest(db);
@@ -29,7 +29,7 @@ namespace LSMTree.Tests
             
             // Create a separate instance for data integrity test to avoid conflicts
             CleanupDirectory(dbPath);
-            using var integrityDb = await LSMTreeDB.OpenAsync(dbPath);
+            await using var integrityDb = await LSMTreeDB.OpenAsync(dbPath);
             await DataIntegrityTest(integrityDb);
             
             await EdgeCaseTests(db);
