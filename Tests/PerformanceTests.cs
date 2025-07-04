@@ -41,7 +41,7 @@ namespace LSMTree.Tests
 
             var dbPath = Path.Combine(Environment.CurrentDirectory, "test_perf_warmup");
             CleanupDirectory(dbPath);
-            using var db = await LSMTreeDB.OpenAsync(dbPath);
+            await using var db = await LSMTreeDB.OpenAsync(dbPath);
             var stopwatch = Stopwatch.StartNew();
             var tasks = new List<Task>();
 
@@ -66,7 +66,7 @@ namespace LSMTree.Tests
 
             var dbPath = Path.Combine(Environment.CurrentDirectory, "test_perf_seq_write");
             CleanupDirectory(dbPath);
-            using var db = await LSMTreeDB.OpenAsync(dbPath);
+            await using var db = await LSMTreeDB.OpenAsync(dbPath);
             var stopwatch = Stopwatch.StartNew();
             var tasks = new List<Task>();
 
@@ -95,7 +95,7 @@ namespace LSMTree.Tests
 
             var dbPath = Path.Combine(Environment.CurrentDirectory, "test_perf_rand_write");
             CleanupDirectory(dbPath);
-            using var db = await LSMTreeDB.OpenAsync(dbPath);
+            await using var db = await LSMTreeDB.OpenAsync(dbPath);
             var random = new Random(42); // Fixed seed for reproducibility
             var stopwatch = Stopwatch.StartNew();
             var tasks = new List<Task>();
@@ -122,7 +122,7 @@ namespace LSMTree.Tests
 
             // Use the same data from sequential write test
             var dbPath = Path.Combine(Environment.CurrentDirectory, "test_perf_seq_write");
-            using var db = await LSMTreeDB.OpenAsync(dbPath);
+            await using var db = await LSMTreeDB.OpenAsync(dbPath);
             var stopwatch = Stopwatch.StartNew();
             var tasks = new List<Task<(bool, byte[])>>();
             int foundCount = 0;
@@ -151,7 +151,7 @@ namespace LSMTree.Tests
 
             // Use the same data from random write test
             var dbPath = Path.Combine(Environment.CurrentDirectory, "test_perf_rand_write");
-            using var db = await LSMTreeDB.OpenAsync(dbPath);
+            await using var db = await LSMTreeDB.OpenAsync(dbPath);
             var random = new Random(42);
             var stopwatch = Stopwatch.StartNew();
             var tasks = new List<Task<(bool, byte[])>>();
@@ -180,7 +180,7 @@ namespace LSMTree.Tests
 
             var dbPath = Path.Combine(Environment.CurrentDirectory, "test_perf_concurrent_write");
             CleanupDirectory(dbPath);
-            using var db = await LSMTreeDB.OpenAsync(dbPath);
+            await using var db = await LSMTreeDB.OpenAsync(dbPath);
             var stopwatch = Stopwatch.StartNew();
             
             // Process in batches to avoid overwhelming the system
@@ -216,7 +216,7 @@ namespace LSMTree.Tests
 
             // Use the same data from concurrent write test
             var dbPath = Path.Combine(Environment.CurrentDirectory, "test_perf_concurrent_write");
-            using var db = await LSMTreeDB.OpenAsync(dbPath);
+            await using var db = await LSMTreeDB.OpenAsync(dbPath);
             var random = new Random(42);
             var stopwatch = Stopwatch.StartNew();
             var tasks = new List<Task<(bool, byte[])>>();
@@ -245,7 +245,7 @@ namespace LSMTree.Tests
 
             var dbPath = Path.Combine(Environment.CurrentDirectory, "test_perf_mixed");
             CleanupDirectory(dbPath);
-            using var db = await LSMTreeDB.OpenAsync(dbPath);
+            await using var db = await LSMTreeDB.OpenAsync(dbPath);
             var random = new Random(42);
             var stopwatch = Stopwatch.StartNew();
             var tasks = new List<Task>();
@@ -280,7 +280,7 @@ namespace LSMTree.Tests
 
             var dbPath = Path.Combine(Environment.CurrentDirectory, "test_perf_stress");
             CleanupDirectory(dbPath);
-            using var db = await LSMTreeDB.OpenAsync(dbPath);
+            await using var db = await LSMTreeDB.OpenAsync(dbPath);
             var random = new Random(42);
             var stopwatch = Stopwatch.StartNew();
             var writeTasks = new List<Task>();
