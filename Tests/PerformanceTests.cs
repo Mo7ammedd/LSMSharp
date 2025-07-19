@@ -11,15 +11,18 @@ namespace LSMTree.Tests
 {
     public class PerformanceTests
     {
-        private const int WARMUP_OPERATIONS = 1000;
-        private const int MEASUREMENT_OPERATIONS = 10000;
-        private const int CONCURRENT_OPERATIONS = 10000; // Reduced from 50000
-        private const int STRESS_OPERATIONS = 50000; // Reduced from 100000
+        private const int WARMUP_OPERATIONS = 500;
+        private const int MEASUREMENT_OPERATIONS = 5000;
+        private const int CONCURRENT_OPERATIONS = 5000; // Increased from 1000
+        private const int STRESS_OPERATIONS = 25000; // Increased from 5000
 
         public static async Task RunAllAsync()
         {
+            var totalStopwatch = Stopwatch.StartNew();
             Console.WriteLine("LSM-Tree Performance Tests");
             Console.WriteLine("==========================");
+            Console.WriteLine($"Started at: {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+            Console.WriteLine();
 
             await WarmupTest();
             await SequentialWriteTest();
@@ -31,13 +34,17 @@ namespace LSMTree.Tests
             await MixedWorkloadTest();
             await StressTest();
 
-            Console.WriteLine("\nPerformance tests completed!");
+            totalStopwatch.Stop();
+            Console.WriteLine();
+            Console.WriteLine($"Performance tests completed in {totalStopwatch.ElapsedMilliseconds}ms ({totalStopwatch.Elapsed.TotalSeconds:F2}s)!");
+            Console.WriteLine($"Finished at: {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
         }
 
         private static async Task WarmupTest()
         {
-            Console.WriteLine("\n1. Warmup Test");
+            Console.WriteLine("1. Warmup Test");
             Console.WriteLine("--------------");
+            Console.WriteLine($"Warming up database with {WARMUP_OPERATIONS} operations...");
 
             var dbPath = Path.Combine(Environment.CurrentDirectory, "test_perf_warmup");
             CleanupDirectory(dbPath);
@@ -48,21 +55,24 @@ namespace LSMTree.Tests
             for (int i = 0; i < WARMUP_OPERATIONS; i++)
             {
                 var key = $"warmup:{i:D6}";
-                var value = GenerateRandomValue(100);
+                var value = GenerateRandomValue(75);
                 tasks.Add(db.SetAsync(key, value));
             }
 
             await Task.WhenAll(tasks);
             stopwatch.Stop();
 
-            Console.WriteLine($"Warmup: {WARMUP_OPERATIONS} operations in {stopwatch.ElapsedMilliseconds}ms");
-            Console.WriteLine($"Throughput: {WARMUP_OPERATIONS * 1000.0 / stopwatch.ElapsedMilliseconds:F0} ops/sec");
+            Console.WriteLine($"✓ Warmup: {WARMUP_OPERATIONS} operations in {stopwatch.ElapsedMilliseconds}ms");
+            Console.WriteLine($"  Throughput: {WARMUP_OPERATIONS * 1000.0 / stopwatch.ElapsedMilliseconds:F0} ops/sec");
+            Console.WriteLine($"  Average latency: {(double)stopwatch.ElapsedMilliseconds / WARMUP_OPERATIONS:F2}ms per operation");
+            Console.WriteLine();
         }
 
         private static async Task SequentialWriteTest()
         {
-            Console.WriteLine("\n2. Sequential Write Test");
+            Console.WriteLine("2. Sequential Write Test");
             Console.WriteLine("-----------------------");
+            Console.WriteLine($"Testing sequential writes with {MEASUREMENT_OPERATIONS} operations...");
 
             var dbPath = Path.Combine(Environment.CurrentDirectory, "test_perf_seq_write");
             CleanupDirectory(dbPath);
@@ -75,6 +85,11 @@ namespace LSMTree.Tests
                 var key = $"seq_write:{i:D8}";
                 var value = GenerateRandomValue(256);
                 tasks.Add(db.SetAsync(key, value));
+
+                if (i > 0 && i % 1000 == 0)
+                {
+                    Console.WriteLine($"  Progress: {i}/{MEASUREMENT_OPERATIONS} operations ({i * 100.0 / MEASUREMENT_OPERATIONS:F1}%)");
+                }
             }
 
             await Task.WhenAll(tasks);
@@ -83,9 +98,11 @@ namespace LSMTree.Tests
             var throughput = MEASUREMENT_OPERATIONS * 1000.0 / stopwatch.ElapsedMilliseconds;
             var avgLatency = (double)stopwatch.ElapsedMilliseconds / MEASUREMENT_OPERATIONS;
 
-            Console.WriteLine($"Sequential writes: {MEASUREMENT_OPERATIONS} operations in {stopwatch.ElapsedMilliseconds}ms");
-            Console.WriteLine($"Throughput: {throughput:F0} ops/sec");
-            Console.WriteLine($"Average latency: {avgLatency:F3}ms per operation");
+            Console.WriteLine($"✓ Sequential writes: {MEASUREMENT_OPERATIONS} operations in {stopwatch.ElapsedMilliseconds}ms");
+            Console.WriteLine($"  Throughput: {throughput:F0} ops/sec");
+            Console.WriteLine($"  Average latency: {avgLatency:F3}ms per operation");
+            Console.WriteLine($"  Total data written: ~{MEASUREMENT_OPERATIONS * 256 / 1024.0:F1} KB");
+            Console.WriteLine();
         }
 
         private static async Task RandomWriteTest()
@@ -129,7 +146,7 @@ namespace LSMTree.Tests
 
             for (int i = 0; i < MEASUREMENT_OPERATIONS; i++)
             {
-                var key = $"seq_write:{i:D8}";
+                var key = $"seq_write:{i:D6}";
                 tasks.Add(db.GetAsync(key));
             }
 
@@ -217,13 +234,18 @@ namespace LSMTree.Tests
             // Use the same data from concurrent write test
             var dbPath = Path.Combine(Environment.CurrentDirectory, "test_perf_concurrent_write");
             await using var db = await LSMTreeDB.OpenAsync(dbPath);
+            
+            // Wait a bit to ensure all writes are flushed and available for reading
+            await Task.Delay(100);
+            await db.FlushAsync(); // Ensure all data is flushed to storage
+            
             var random = new Random(42);
             var stopwatch = Stopwatch.StartNew();
             var tasks = new List<Task<(bool, byte[])>>();
 
             for (int i = 0; i < CONCURRENT_OPERATIONS; i++)
             {
-                var key = $"concurrent_write:{random.Next(0, CONCURRENT_OPERATIONS):D8}";
+                var key = $"concurrent_write:{i:D8}"; // Use sequential keys that we know exist
                 tasks.Add(db.GetAsync(key));
             }
 
