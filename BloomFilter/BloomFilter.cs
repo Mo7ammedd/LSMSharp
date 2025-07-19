@@ -28,11 +28,9 @@ namespace LSMTree.BloomFilter
 
             _expectedFalsePositiveRate = falsePositiveRate;
             
-            // Calculate optimal bit array size: m = -(n * ln(p)) / (ln(2)^2)
             int bitArraySize = (int)Math.Ceiling(-expectedElements * Math.Log(falsePositiveRate) / Math.Pow(Math.Log(2), 2));
             _bitArray = new BitArray(bitArraySize);
 
-            // Calculate optimal number of hash functions: k = (m/n) * ln(2)
             _hashFunctionCount = Math.Max(1, (int)Math.Round(bitArraySize * Math.Log(2) / expectedElements));
         }
 
@@ -46,7 +44,7 @@ namespace LSMTree.BloomFilter
 
             _bitArray = new BitArray(bitArraySize);
             _hashFunctionCount = hashFunctionCount;
-            _expectedFalsePositiveRate = 0.01; // Default value
+            _expectedFalsePositiveRate = 0.01; 
         }
 
         public void Add(string key)
@@ -82,12 +80,10 @@ namespace LSMTree.BloomFilter
             using var stream = new MemoryStream();
             using var writer = new BinaryWriter(stream);
 
-            // Write metadata
             writer.Write(_bitArray.Length);
             writer.Write(_hashFunctionCount);
             writer.Write(_expectedFalsePositiveRate);
 
-            // Write bit array
             var bytes = new byte[(_bitArray.Length + 7) / 8];
             _bitArray.CopyTo(bytes, 0);
             writer.Write(bytes.Length);
