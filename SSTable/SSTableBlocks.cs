@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.IO.Compression;
 using System.Linq;
 using System.Text;
 using LSMTree.Core;
@@ -11,15 +10,19 @@ namespace LSMTree.SSTable
     public class DataBlock
     {
         public List<Entry> Entries { get; private set; }
+        public CompressionType CompressionType { get; set; }
+        private static readonly ICompressor DefaultCompressor = CompressionFactory.Create(CompressionType.GZip);
 
-        public DataBlock()
+        public DataBlock(CompressionType compressionType = CompressionType.GZip)
         {
             Entries = new List<Entry>();
+            CompressionType = compressionType;
         }
 
-        public DataBlock(IEnumerable<Entry> entries)
+        public DataBlock(IEnumerable<Entry> entries, CompressionType compressionType = CompressionType.GZip)
         {
             Entries = entries.ToList();
+            CompressionType = compressionType;
         }
 
         public byte[] Encode()
@@ -31,11 +34,9 @@ namespace LSMTree.SSTable
 
             foreach (var entry in Entries)
             {
-                // Calculate common prefix length
                 int commonPrefixLength = GetCommonPrefixLength(previousKey, entry.Key);
                 string suffix = entry.Key.Substring(commonPrefixLength);
 
-                // Write: [common_prefix_length][suffix_length][suffix][value_length][value][tombstone][timestamp]
                 writer.Write((ushort)commonPrefixLength);
                 
                 var suffixBytes = Encoding.UTF8.GetBytes(suffix);
@@ -51,36 +52,40 @@ namespace LSMTree.SSTable
                 previousKey = entry.Key;
             }
 
-            // Compress the data
             var uncompressed = stream.ToArray();
-            return Compress(uncompressed);
+            var compressor = CompressionFactory.Create(CompressionType);
+            return compressor.Compress(uncompressed);
         }
 
         public void Decode(byte[] data)
         {
-            var uncompressed = Decompress(data);
-            
-            using var stream = new MemoryStream(uncompressed);
-            using var reader = new BinaryReader(stream);
+            var compressor = CompressionFactory.Create(CompressionType);
+            var uncompressed = compressor.Decompress(data);
+            DecodeEntries(uncompressed);
+        }
+
+        private void DecodeEntries(byte[] uncompressed)
+        {
+            using var uncompressedStream = new MemoryStream(uncompressed);
+            using var uncompressedReader = new BinaryReader(uncompressedStream);
 
             Entries.Clear();
             string previousKey = string.Empty;
 
-            while (stream.Position < stream.Length)
+            while (uncompressedStream.Position < uncompressedStream.Length)
             {
-                ushort commonPrefixLength = reader.ReadUInt16();
-                ushort suffixLength = reader.ReadUInt16();
+                ushort commonPrefixLength = uncompressedReader.ReadUInt16();
+                ushort suffixLength = uncompressedReader.ReadUInt16();
                 
-                var suffixBytes = reader.ReadBytes(suffixLength);
+                var suffixBytes = uncompressedReader.ReadBytes(suffixLength);
                 string suffix = Encoding.UTF8.GetString(suffixBytes);
                 
-                int valueLength = reader.ReadInt32();
-                var value = reader.ReadBytes(valueLength);
+                int valueLength = uncompressedReader.ReadInt32();
+                var value = uncompressedReader.ReadBytes(valueLength);
                 
-                bool tombstone = reader.ReadBoolean();
-                long timestamp = reader.ReadInt64();
+                bool tombstone = uncompressedReader.ReadBoolean();
+                long timestamp = uncompressedReader.ReadInt64();
 
-                // Reconstruct full key
                 string key = previousKey.Substring(0, commonPrefixLength) + suffix;
                 
                 Entries.Add(new Entry(key, value, tombstone, timestamp));
@@ -117,24 +122,6 @@ namespace LSMTree.SSTable
                 i++;
                 
             return i;
-        }
-
-        private static byte[] Compress(byte[] data)
-        {
-            using var output = new MemoryStream();
-            using var compressionStream = new GZipStream(output, CompressionLevel.Fastest);
-            compressionStream.Write(data, 0, data.Length);
-            compressionStream.Close();
-            return output.ToArray();
-        }
-
-        private static byte[] Decompress(byte[] data)
-        {
-            using var input = new MemoryStream(data);
-            using var compressionStream = new GZipStream(input, CompressionMode.Decompress);
-            using var output = new MemoryStream();
-            compressionStream.CopyTo(output);
-            return output.ToArray();
         }
     }
 
