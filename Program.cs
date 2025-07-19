@@ -1,25 +1,39 @@
 ﻿using System.Text;
 using LSMTree;
+using LSMTree.Core;
 
 namespace LSMTree
-{    class Program
+{    
+    class Program
     {
         static async Task Main(string[] args)
         {
             Console.WriteLine("LSM-Tree Storage Engine Demo");
             Console.WriteLine("============================");
 
-            // Create database directory
             var dbPath = Path.Combine(Environment.CurrentDirectory, "lsmdb");
             if (Directory.Exists(dbPath))
             {
                 Directory.Delete(dbPath, true);
-            }
+            }            // Demo: Configure LSM-Tree with block cache and compression
+            var config = new LSMConfiguration
+            {
+                MemtableThreshold = 512 * 1024, // 512KB memtable
+                DataBlockSize = 8192, // 8KB blocks
+                CompressionType = CompressionType.GZip,
+                BlockCacheSize = 32 * 1024 * 1024, // 32MB cache
+                EnableBlockCache = true,
+                BloomFilterFalsePositiveRate = 0.01
+            };
 
-            // Open LSM-Tree database
-            using var db = await LSMTreeDB.OpenAsync(dbPath);
+            using var db = await LSMTreeDB.OpenAsync(dbPath, config);
 
-            // Demo 1: Basic Operations
+            Console.WriteLine($"Configuration:");
+            Console.WriteLine($"  Memtable Threshold: {config.MemtableThreshold:N0} bytes");
+            Console.WriteLine($"  Block Size: {config.DataBlockSize:N0} bytes");
+            Console.WriteLine($"  Compression: {config.CompressionType}");
+            Console.WriteLine($"  Block Cache: {(config.EnableBlockCache ? $"{config.BlockCacheSize:N0} bytes" : "Disabled")}");
+            Console.WriteLine();
             Console.WriteLine("\n1. Basic Operations");
             Console.WriteLine("-------------------");
 
@@ -132,10 +146,46 @@ namespace LSMTree
             var readResults = await Task.WhenAll(readTasks);
             stopwatch.Stop();
 
-            int foundCount = readResults.Count(r => r.Item1);
-            Console.WriteLine($"Read 1,000 random records in {stopwatch.ElapsedMilliseconds}ms");
+            int foundCount = readResults.Count(r => r.Item1);            Console.WriteLine($"Read 1,000 random records in {stopwatch.ElapsedMilliseconds}ms");
             Console.WriteLine($"Read throughput: {1000.0 / stopwatch.Elapsed.TotalSeconds:F0} ops/sec");
             Console.WriteLine($"Found {foundCount}/1000 records");
+
+            // Demo: Block Cache Statistics
+            var cacheStats = db.GetCacheStats();
+            if (cacheStats.HasValue)
+            {
+                Console.WriteLine("\n7. Block Cache Statistics");
+                Console.WriteLine("-------------------------");
+                Console.WriteLine($"Cache Hits: {cacheStats.Value.Hits:N0}");
+                Console.WriteLine($"Cache Misses: {cacheStats.Value.Misses:N0}");
+                Console.WriteLine($"Cache Hit Ratio: {cacheStats.Value.HitRatio:P2}");
+                Console.WriteLine($"Cache Size: {cacheStats.Value.Size:N0} bytes");
+                Console.WriteLine($"Cache Evictions: {cacheStats.Value.Evictions:N0}");
+            }
+
+            // Demo 5: Compression Type Testing
+            Console.WriteLine("\n5. Compression Type Testing");
+            Console.WriteLine("----------------------------");
+
+            // Test different compression algorithms
+            var compressionTypes = new[] { CompressionType.None, CompressionType.GZip, CompressionType.LZ4 };
+            
+            foreach (var compressionType in compressionTypes)
+            {
+                var testData = Encoding.UTF8.GetBytes($"Large test data for compression {new string('x', 1000)}");
+                var compressor = CompressionFactory.Create(compressionType);
+                var compressed = compressor.Compress(testData);
+                var decompressed = compressor.Decompress(compressed);
+                
+                Console.WriteLine($"  {compressionType}: {testData.Length} -> {compressed.Length} bytes " +
+                                $"({100.0 * compressed.Length / testData.Length:F1}% of original)");
+                
+                // Verify decompression works
+                if (!testData.SequenceEqual(decompressed))
+                {
+                    throw new InvalidOperationException($"Compression/decompression failed for {compressionType}");
+                }
+            }
 
             Console.WriteLine("\nDemo completed successfully!");
             Console.WriteLine("Check the 'lsmdb' directory for generated files.");
