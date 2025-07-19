@@ -75,11 +75,21 @@ namespace LSMTree
                 memtableToUse = _activeMemtable;
             }
 
-            await memtableToUse.SetAsync(entry);
-
-            if (memtableToUse.ShouldFlush(_config.MemtableThreshold))
+            try
             {
-                await TriggerFlushAsync();
+                await memtableToUse.SetAsync(entry);
+
+                if (memtableToUse.ShouldFlush(_config.MemtableThreshold))
+                {
+                    await TriggerFlushAsync();
+                }
+            }
+            catch (ObjectDisposedException)
+            {
+                // If memtable was disposed, check if we're shutting down
+                if (_disposed)
+                    throw new ObjectDisposedException(nameof(LSMTreeDB));
+                throw;
             }
         }
 
@@ -308,22 +318,32 @@ namespace LSMTree
             if (_disposed)
                 return;
 
-            _disposed = true;
-
+            // Wait for any ongoing operations to complete
+            await _flushSemaphore.WaitAsync();
+            
             try
             {
-                // Flush any remaining data
-                await FlushAsync();
-            }
-            catch
-            {
-                // Ignore flush errors during disposal
-            }
+                _disposed = true;
 
-            _activeMemtable?.Dispose();
-            _flushingMemtable?.Dispose();
-            _levelManager?.Dispose();
-            _flushSemaphore?.Dispose();
+                // Flush any remaining data
+                try
+                {
+                    await FlushMemtableAsync();
+                }
+                catch
+                {
+                    // Ignore flush errors during disposal
+                }
+
+                _activeMemtable?.Dispose();
+                _flushingMemtable?.Dispose();
+                _levelManager?.Dispose();
+            }
+            finally
+            {
+                _flushSemaphore?.Release();
+                _flushSemaphore?.Dispose();
+            }
         }
 
         public CacheStats? GetCacheStats()
