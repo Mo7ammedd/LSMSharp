@@ -12,6 +12,7 @@ namespace LSMTree.SSTable
     {
         private readonly string _filePath;
         private readonly FileStream? _fileStream;
+        private readonly IBlockCache? _blockCache;
         internal IndexBlock? _indexBlock;
         internal MetaBlock? _metaBlock;
         internal Footer? _footer;
@@ -23,10 +24,11 @@ namespace LSMTree.SSTable
         public string? MaxKey => _metaBlock?.MaxKey;
         public int EntryCount => _metaBlock?.EntryCount ?? 0;
 
-        private SSTable(string filePath, FileStream? fileStream = null)
+        private SSTable(string filePath, FileStream? fileStream = null, IBlockCache? blockCache = null)
         {
             _filePath = filePath;
             _fileStream = fileStream;
+            _blockCache = blockCache;
         }
 
         public async Task<(bool found, Entry entry)> SearchAsync(string key)
@@ -34,7 +36,6 @@ namespace LSMTree.SSTable
             if (_disposed || _indexBlock == null)
                 return (false, default);
 
-            // Check if key is in range
             if (!string.IsNullOrEmpty(MinKey) && !string.IsNullOrEmpty(MaxKey))
             {
                 if (string.Compare(key, MinKey, StringComparison.Ordinal) < 0 ||
@@ -42,12 +43,10 @@ namespace LSMTree.SSTable
                     return (false, default);
             }
 
-            // Find the data block that might contain the key
             var (found, blockHandle) = _indexBlock.Search(key);
             if (!found)
                 return (false, default);
 
-            // Read and search the data block
             var dataBlock = await ReadDataBlockAsync(blockHandle);
             return dataBlock.Search(key);
         }
@@ -76,6 +75,13 @@ namespace LSMTree.SSTable
             if (_fileStream == null)
                 throw new InvalidOperationException("File stream is not available");
 
+            var cacheKey = new BlockCacheKey(_filePath, handle.Offset).ToString();
+            
+            if (_blockCache?.TryGet(cacheKey, out var cachedBlock) == true)
+            {
+                return cachedBlock;
+            }
+
             var buffer = new byte[handle.Length];
             _fileStream.Seek((long)handle.Offset, SeekOrigin.Begin);
             
@@ -83,10 +89,13 @@ namespace LSMTree.SSTable
             
             var dataBlock = new DataBlock();
             dataBlock.Decode(buffer);
+            
+            _blockCache?.Put(cacheKey, dataBlock);
+            
             return dataBlock;
         }
 
-        public static async Task<SSTable> OpenAsync(string filePath)
+        public static async Task<SSTable> OpenAsync(string filePath, IBlockCache? blockCache = null)
         {
             if (!File.Exists(filePath))
                 throw new FileNotFoundException($"SSTable file not found: {filePath}");
@@ -95,7 +104,6 @@ namespace LSMTree.SSTable
             
             try
             {
-                // Read footer
                 if (stream.Length < Footer.FooterSize)
                     throw new InvalidDataException("File too small to contain valid SSTable");
 
@@ -106,7 +114,6 @@ namespace LSMTree.SSTable
                 var footer = new Footer();
                 footer.Decode(footerBytes);
 
-                // Read meta block
                 var metaBytes = new byte[footer.MetaBlockHandle.Length];
                 stream.Seek((long)footer.MetaBlockHandle.Offset, SeekOrigin.Begin);
                 await stream.ReadAsync(metaBytes, 0, (int)footer.MetaBlockHandle.Length);
@@ -114,7 +121,6 @@ namespace LSMTree.SSTable
                 var metaBlock = new MetaBlock();
                 metaBlock.Decode(metaBytes);
 
-                // Read index block
                 var indexBytes = new byte[footer.IndexBlockHandle.Length];
                 stream.Seek((long)footer.IndexBlockHandle.Offset, SeekOrigin.Begin);
                 await stream.ReadAsync(indexBytes, 0, (int)footer.IndexBlockHandle.Length);
@@ -122,8 +128,7 @@ namespace LSMTree.SSTable
                 var indexBlock = new IndexBlock();
                 indexBlock.Decode(indexBytes);
 
-                // Create SSTable instance with loaded metadata
-                var sstable = new SSTable(filePath, stream);
+                var sstable = new SSTable(filePath, stream, blockCache);
                 sstable._indexBlock = indexBlock;
                 sstable._metaBlock = metaBlock;
                 sstable._footer = footer;
@@ -141,7 +146,8 @@ namespace LSMTree.SSTable
             string filePath, 
             IEnumerable<Entry> entries, 
             int level = 0, 
-            int dataBlockSize = 4096)
+            int dataBlockSize = 4096,
+            CompressionType compressionType = CompressionType.GZip)
         {
             var sortedEntries = entries.OrderBy(e => e.Key, StringComparer.Ordinal).ToList();
             
@@ -176,8 +182,7 @@ namespace LSMTree.SSTable
                 
                 if (currentBlockSize + entrySize > dataBlockSize && currentBlockEntries.Any())
                 {
-                    // Write current block
-                    await WriteDataBlock(stream, currentBlockEntries, indexBlock);
+                    await WriteDataBlock(stream, currentBlockEntries, indexBlock, compressionType);
                     currentBlockEntries.Clear();
                     currentBlockSize = 0;
                 }
@@ -186,10 +191,9 @@ namespace LSMTree.SSTable
                 currentBlockSize += entrySize;
             }
 
-            // Write final block
             if (currentBlockEntries.Any())
             {
-                await WriteDataBlock(stream, currentBlockEntries, indexBlock);
+                await WriteDataBlock(stream, currentBlockEntries, indexBlock, compressionType);
             }
 
             // Write meta block
@@ -221,9 +225,10 @@ namespace LSMTree.SSTable
         private static async Task WriteDataBlock(
             FileStream stream, 
             List<Entry> entries, 
-            IndexBlock indexBlock)
+            IndexBlock indexBlock,
+            CompressionType compressionType = CompressionType.GZip)
         {
-            var dataBlock = new DataBlock(entries);
+            var dataBlock = new DataBlock(entries, compressionType);
             var dataBytes = dataBlock.Encode();
             
             var offset = stream.Position;
@@ -240,11 +245,11 @@ namespace LSMTree.SSTable
 
         private static int EstimateEntrySize(Entry entry)
         {
-            return sizeof(long) + // timestamp
-                   sizeof(bool) + // tombstone
-                   (entry.Key?.Length ?? 0) * sizeof(char) + // key
-                   (entry.Value?.Length ?? 0) + // value
-                   64; // overhead estimation
+            return sizeof(long) + 
+                   sizeof(bool) + 
+                   (entry.Key?.Length ?? 0) * sizeof(char) + 
+                   (entry.Value?.Length ?? 0) + 
+                   64;
         }
 
         public void Dispose()
