@@ -8,6 +8,28 @@ namespace LSMTree
     {
         static async Task Main(string[] args)
         {
+            if (args.Length > 0)
+            {
+                switch (args[0].ToLower())
+                {                    case "functional":
+                        await LSMTree.Tests.FunctionalTests.RunAllAsync();
+                        return;
+                    case "performance":
+                        await LSMTree.Tests.PerformanceTests.RunAllAsync();
+                        return;
+                    case "stress":
+                        await LSMTree.Tests.StressTests.RunAllAsync();
+                        return;
+                    case "all-tests":
+                        await LSMTree.Tests.FunctionalTests.RunAllAsync();
+                        Console.WriteLine();
+                        await LSMTree.Tests.PerformanceTests.RunAllAsync();
+                        Console.WriteLine();
+                        await LSMTree.Tests.StressTests.RunAllAsync();
+                        return;
+                }
+            }
+
             Console.WriteLine("LSM-Tree Storage Engine Demo");
             Console.WriteLine("============================");
 
