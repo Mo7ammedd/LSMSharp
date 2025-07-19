@@ -218,12 +218,30 @@ namespace LSMTree.Compaction
                 }
 
                 // Add new table to L1
+                var bloomFilter = new BloomFilter.BloomFilter(Math.Max(1, mergedEntries.Count()));
+                string? minKey = null;
+                string? maxKey = null;
+                
+                foreach (var entry in mergedEntries)
+                {
+                    bloomFilter.Add(entry.Key);
+                    if (minKey == null || string.Compare(entry.Key, minKey, StringComparison.Ordinal) < 0)
+                        minKey = entry.Key;
+                    if (maxKey == null || string.Compare(entry.Key, maxKey, StringComparison.Ordinal) > 0)
+                        maxKey = entry.Key;
+                }
+                
                 var newHandle = new TableHandle(
                     GetNextLevelIndex(1),
                     newFilePath,
-                    new BloomFilter.BloomFilter(mergedEntries.Count),
+                    bloomFilter,
                     new IndexBlock(),
-                    new MetaBlock { Level = 1 });
+                    new MetaBlock { 
+                        Level = 1,
+                        EntryCount = mergedEntries.Count(),
+                        MinKey = minKey,
+                        MaxKey = maxKey
+                    });
 
                 _levels[1].AddLast(newHandle);
             }
@@ -312,12 +330,30 @@ namespace LSMTree.Compaction
                 }
 
                 // Add new table
+                var bloomFilter = new BloomFilter.BloomFilter(Math.Max(1, mergedEntries.Count()));
+                string? minKey = null;
+                string? maxKey = null;
+                
+                foreach (var entry in mergedEntries)
+                {
+                    bloomFilter.Add(entry.Key);
+                    if (minKey == null || string.Compare(entry.Key, minKey, StringComparison.Ordinal) < 0)
+                        minKey = entry.Key;
+                    if (maxKey == null || string.Compare(entry.Key, maxKey, StringComparison.Ordinal) > 0)
+                        maxKey = entry.Key;
+                }
+                
                 var newHandle = new TableHandle(
                     GetNextLevelIndex(level + 1),
                     newFilePath,
-                    new BloomFilter.BloomFilter(mergedEntries.Count),
+                    bloomFilter,
                     new IndexBlock(),
-                    new MetaBlock { Level = (ulong)(level + 1) });
+                    new MetaBlock { 
+                        Level = (ulong)(level + 1),
+                        EntryCount = mergedEntries.Count(),
+                        MinKey = minKey,
+                        MaxKey = maxKey
+                    });
 
                 _levels[level + 1].AddLast(newHandle);
             }
