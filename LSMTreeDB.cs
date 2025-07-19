@@ -12,43 +12,47 @@ namespace LSMTree
     public class LSMTreeDB : ILSMTree, IAsyncDisposable
     {
         private readonly string _directory;
-        private readonly int _memtableThreshold;
-        private readonly int _dataBlockSize;
+        private readonly LSMConfiguration _config;
         private readonly LevelManager _levelManager;
         private readonly SemaphoreSlim _flushSemaphore;
         private readonly object _memtableLock = new object();
+        private readonly IBlockCache? _blockCache;
 
         private IMemtable _activeMemtable;
         private IMemtable? _flushingMemtable;
         private long _nextWalId;
         private bool _disposed = false;
 
-        public LSMTreeDB(string directory, int memtableThreshold = 1024 * 1024, int dataBlockSize = 4096)
+        public LSMTreeDB(string directory, LSMConfiguration? config = null)
         {
             _directory = directory ?? throw new ArgumentNullException(nameof(directory));
-            _memtableThreshold = memtableThreshold;
-            _dataBlockSize = dataBlockSize;
+            _config = config ?? LSMConfiguration.Default;
+            _config.Validate();
 
-            // Ensure directory exists
             if (!Directory.Exists(_directory))
             {
                 Directory.CreateDirectory(_directory);
             }
 
-            _levelManager = new LevelManager(Path.Combine(_directory, "levels"));
+            _blockCache = _config.EnableBlockCache ? new LRUBlockCache(_config.BlockCacheSize) : null;
+            _levelManager = new LevelManager(
+                Path.Combine(_directory, "levels"), 
+                _blockCache, 
+                _config.Level0CompactionTrigger, 
+                (int)_config.CompactionRatio, 
+                _config.DataBlockSize, 
+                _config.CompressionType);
             _flushSemaphore = new SemaphoreSlim(1, 1);
             _nextWalId = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
 
-            // Initialize active memtable
             _activeMemtable = CreateNewMemtable();
         }
 
         public static async Task<LSMTreeDB> OpenAsync(
             string directory, 
-            int memtableThreshold = 1024 * 1024, 
-            int dataBlockSize = 4096)
+            LSMConfiguration? config = null)
         {
-            var db = new LSMTreeDB(directory, memtableThreshold, dataBlockSize);
+            var db = new LSMTreeDB(directory, config);
             await db.RecoverAsync();
             return db;
         }
@@ -73,8 +77,7 @@ namespace LSMTree
 
             await memtableToUse.SetAsync(entry);
 
-            // Check if flush is needed
-            if (memtableToUse.ShouldFlush(_memtableThreshold))
+            if (memtableToUse.ShouldFlush(_config.MemtableThreshold))
             {
                 await TriggerFlushAsync();
             }
@@ -143,8 +146,7 @@ namespace LSMTree
 
             await memtableToUse.SetAsync(entry);
 
-            // Check if flush is needed
-            if (memtableToUse.ShouldFlush(_memtableThreshold))
+            if (memtableToUse.ShouldFlush(_config.MemtableThreshold))
             {
                 await TriggerFlushAsync();
             }
@@ -216,7 +218,7 @@ namespace LSMTree
                 var timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
                 var sstableFile = Path.Combine(_directory, "levels", $"L0_{timestamp}.sst");
                 
-                await SSTable.SSTable.BuildAsync(sstableFile, entries, 0, _dataBlockSize);
+                await SSTable.SSTable.BuildAsync(sstableFile, entries, 0, _config.DataBlockSize, _config.CompressionType);
 
                 // Add to level manager
                 await _levelManager.AddSSTableAsync(sstableFile);
@@ -263,7 +265,7 @@ namespace LSMTree
                         var timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
                         var sstableFile = Path.Combine(_directory, "levels", $"L0_recovered_{timestamp}.sst");
                         
-                        await SSTable.SSTable.BuildAsync(sstableFile, entries, 0, _dataBlockSize);
+                        await SSTable.SSTable.BuildAsync(sstableFile, entries, 0, _config.DataBlockSize, _config.CompressionType);
                         await _levelManager.AddSSTableAsync(sstableFile);
                     }
 
@@ -322,6 +324,21 @@ namespace LSMTree
             _flushingMemtable?.Dispose();
             _levelManager?.Dispose();
             _flushSemaphore?.Dispose();
+        }
+
+        public CacheStats? GetCacheStats()
+        {
+            return _blockCache?.GetStats();
+        }
+
+        public void ClearCache()
+        {
+            _blockCache?.Clear();
+        }
+
+        public LSMConfiguration GetConfiguration()
+        {
+            return _config;
         }
     }
 }
