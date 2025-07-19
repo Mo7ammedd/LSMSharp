@@ -7,11 +7,11 @@ namespace LSMTree
     class Program
     {
         static async Task Main(string[] args)
-        {
-            if (args.Length > 0)
+        {            if (args.Length > 0)
             {
                 switch (args[0].ToLower())
-                {                    case "functional":
+                {
+                    case "functional":
                         await LSMTree.Tests.FunctionalTests.RunAllAsync();
                         return;
                     case "performance":
@@ -19,6 +19,9 @@ namespace LSMTree
                         return;
                     case "stress":
                         await LSMTree.Tests.StressTests.RunAllAsync();
+                        return;
+                    case "bloom":
+                        LSMTree.Tests.BloomFilterBenchmark.RunBenchmark();
                         return;
                     case "all-tests":
                         await LSMTree.Tests.FunctionalTests.RunAllAsync();
