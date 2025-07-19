@@ -16,16 +16,20 @@ namespace LSMTree.Compaction
         private readonly int _l0TargetNum;
         private readonly int _levelMultiplier;
         private readonly int _dataBlockSize;
+        private readonly CompressionType _compressionType;
+        private readonly IBlockCache? _blockCache;
         private readonly List<LinkedList<TableHandle>> _levels;
         private readonly object _lock = new object();
         private bool _disposed = false;
 
-        public LevelManager(string directory, int l0TargetNum = 4, int levelMultiplier = 10, int dataBlockSize = 4096)
+        public LevelManager(string directory, IBlockCache? blockCache = null, int l0TargetNum = 4, int levelMultiplier = 10, int dataBlockSize = 4096, CompressionType compressionType = CompressionType.GZip)
         {
             _directory = directory ?? throw new ArgumentNullException(nameof(directory));
+            _blockCache = blockCache;
             _l0TargetNum = l0TargetNum;
             _levelMultiplier = levelMultiplier;
             _dataBlockSize = dataBlockSize;
+            _compressionType = compressionType;
             _levels = new List<LinkedList<TableHandle>>();
 
             // Ensure directory exists
@@ -37,7 +41,7 @@ namespace LSMTree.Compaction
 
         public async Task AddSSTableAsync(string filePath)
         {
-            using var sstable = await SSTable.SSTable.OpenAsync(filePath);
+            using var sstable = await SSTable.SSTable.OpenAsync(filePath, _blockCache);
             
             // Build bloom filter from all entries
             var entries = (await sstable.GetAllEntriesAsync()).ToList();
@@ -103,7 +107,7 @@ namespace LSMTree.Compaction
                     // Search in the SSTable
                     try
                     {
-                        using var sstable = await SSTable.SSTable.OpenAsync(handle.FilePath);
+                        using var sstable = await SSTable.SSTable.OpenAsync(handle.FilePath, _blockCache);
                         var result = await sstable.SearchAsync(key);
                         if (result.found)
                         {
@@ -164,7 +168,7 @@ namespace LSMTree.Compaction
             {
                 try
                 {
-                    using var sstable = await SSTable.SSTable.OpenAsync(handle.FilePath);
+                    using var sstable = await SSTable.SSTable.OpenAsync(handle.FilePath, _blockCache);
                     var entries = await sstable.GetAllEntriesAsync();
                     allEntries.Add(entries);
                 }
@@ -179,7 +183,7 @@ namespace LSMTree.Compaction
             {
                 try
                 {
-                    using var sstable = await SSTable.SSTable.OpenAsync(handle.FilePath);
+                    using var sstable = await SSTable.SSTable.OpenAsync(handle.FilePath, _blockCache);
                     var entries = await sstable.GetAllEntriesAsync();
                     allEntries.Add(entries);
                 }
@@ -197,7 +201,7 @@ namespace LSMTree.Compaction
 
             // Create new SSTable in L1
             var newFilePath = GenerateSSTablePath(1);
-            var newSSTable = await SSTable.SSTable.BuildAsync(newFilePath, mergedEntries, 1, _dataBlockSize);
+            var newSSTable = await SSTable.SSTable.BuildAsync(newFilePath, mergedEntries, 1, _dataBlockSize, _compressionType);
 
             // Update level structure
             lock (_lock)
@@ -265,7 +269,7 @@ namespace LSMTree.Compaction
             {
                 try
                 {
-                    using var sstable = await SSTable.SSTable.OpenAsync(handle.FilePath);
+                    using var sstable = await SSTable.SSTable.OpenAsync(handle.FilePath, _blockCache);
                     var entries = await sstable.GetAllEntriesAsync();
                     allEntries.Add(entries);
                 }
@@ -278,7 +282,7 @@ namespace LSMTree.Compaction
             // Add current level entry last (newer)
             try
             {
-                using var sstable = await SSTable.SSTable.OpenAsync(selectedTable.FilePath);
+                using var sstable = await SSTable.SSTable.OpenAsync(selectedTable.FilePath, _blockCache);
                 var entries = await sstable.GetAllEntriesAsync();
                 allEntries.Add(entries);
             }
@@ -295,7 +299,7 @@ namespace LSMTree.Compaction
 
             // Create new SSTable(s) in next level
             var newFilePath = GenerateSSTablePath(level + 1);
-            var newSSTable = await SSTable.SSTable.BuildAsync(newFilePath, mergedEntries, level + 1, _dataBlockSize);
+            var newSSTable = await SSTable.SSTable.BuildAsync(newFilePath, mergedEntries, level + 1, _dataBlockSize, _compressionType);
 
             // Update level structure
             lock (_lock)
