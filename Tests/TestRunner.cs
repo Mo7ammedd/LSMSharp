@@ -27,6 +27,9 @@ namespace LSMTree.Tests
                         case "stress":
                             await StressTests.RunAllAsync();
                             break;
+                        case "bloom":
+                            BloomFilterBenchmark.RunBenchmark();
+                            break;
                         case "all":
                         default:
                             await RunAllTests();
