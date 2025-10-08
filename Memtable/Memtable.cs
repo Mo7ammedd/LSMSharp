@@ -96,6 +96,11 @@ namespace LSMTree.Memtable
             await _wal.DeleteAsync();
         }
 
+        public async Task SyncWalAsync()
+        {
+            await _wal.SyncAsync();
+        }
+
         public void Dispose()
         {
             _wal?.Dispose();

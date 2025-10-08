@@ -3,6 +3,8 @@ using System.IO;
 using System.Threading.Tasks;
 using System.Collections.Generic;
 using System.Text;
+using System.Threading;
+using System.Collections.Concurrent;
 using LSMTree.Core;
 
 namespace LSMTree.WAL
@@ -12,22 +14,29 @@ namespace LSMTree.WAL
         private readonly string _filePath;
         private readonly FileStream _fileStream;
         private readonly BinaryWriter _writer;
+        private readonly ConcurrentQueue<Entry> _writeQueue;
+        private readonly SemaphoreSlim _flushSemaphore;
+        private readonly Timer _flushTimer;
         private readonly object _writeLock = new object();
         private bool _disposed = false;
+        private const int FlushIntervalMs = 100;
+        private const int MaxBatchSize = 100;
 
         public WriteAheadLog(string filePath)
         {
             _filePath = filePath ?? throw new ArgumentNullException(nameof(filePath));
             
-            // Ensure directory exists
             var directory = Path.GetDirectoryName(_filePath);
             if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
             {
                 Directory.CreateDirectory(directory);
             }
 
-            _fileStream = new FileStream(_filePath, FileMode.Append, FileAccess.Write, FileShare.Read);
+            _fileStream = new FileStream(_filePath, FileMode.Append, FileAccess.Write, FileShare.Read, 64 * 1024);
             _writer = new BinaryWriter(_fileStream, Encoding.UTF8, leaveOpen: true);
+            _writeQueue = new ConcurrentQueue<Entry>();
+            _flushSemaphore = new SemaphoreSlim(1, 1);
+            _flushTimer = new Timer(FlushCallback, null, FlushIntervalMs, FlushIntervalMs);
         }
 
         public Task WriteAsync(params Entry[] entries)
@@ -35,20 +44,66 @@ namespace LSMTree.WAL
             if (entries == null || entries.Length == 0)
                 return Task.CompletedTask;
 
-            lock (_writeLock)
+            if (_disposed)
+                throw new ObjectDisposedException(nameof(WriteAheadLog));
+
+            foreach (var entry in entries)
+            {
+                _writeQueue.Enqueue(entry);
+            }
+
+            if (_writeQueue.Count >= MaxBatchSize)
+            {
+                return FlushBatchAsync();
+            }
+
+            return Task.CompletedTask;
+        }
+
+        private void FlushCallback(object? state)
+        {
+            if (!_disposed && !_writeQueue.IsEmpty)
+            {
+                _ = FlushBatchAsync();
+            }
+        }
+
+        private async Task FlushBatchAsync()
+        {
+            if (!await _flushSemaphore.WaitAsync(0))
+                return;
+
+            try
             {
                 if (_disposed)
-                    throw new ObjectDisposedException(nameof(WriteAheadLog));
+                    return;
 
-                foreach (var entry in entries)
+                var batch = new List<Entry>();
+                while (batch.Count < MaxBatchSize && _writeQueue.TryDequeue(out var entry))
                 {
-                    WriteEntry(entry);
+                    batch.Add(entry);
                 }
-                _writer.Flush();
-                _fileStream.Flush(true); // Force sync to disk
+
+                if (batch.Count == 0)
+                    return;
+
+                lock (_writeLock)
+                {
+                    if (_disposed)
+                        return;
+
+                    foreach (var entry in batch)
+                    {
+                        WriteEntry(entry);
+                    }
+                    _writer.Flush();
+                    _fileStream.Flush(true);
+                }
             }
-            
-            return Task.CompletedTask;
+            finally
+            {
+                _flushSemaphore.Release();
+            }
         }
 
         public Task<IEnumerable<Entry>> ReadAsync()
@@ -73,12 +128,10 @@ namespace LSMTree.WAL
                 }
                 catch (EndOfStreamException)
                 {
-                    // End of file reached
                     break;
                 }
                 catch (Exception)
                 {
-                    // Corrupted entry, stop reading
                     break;
                 }
             }
@@ -86,46 +139,46 @@ namespace LSMTree.WAL
             return Task.FromResult<IEnumerable<Entry>>(entries);
         }
 
-        public Task DeleteAsync()
+        public async Task DeleteAsync()
         {
             if (_disposed)
-                return Task.CompletedTask;
+                return;
 
-            lock (_writeLock)
+            await _flushSemaphore.WaitAsync();
+            try
             {
-                if (!_disposed)
+                lock (_writeLock)
                 {
-                    _writer?.Close();
-                    _fileStream?.Close();
-                    _disposed = true;
-                    
-                    if (File.Exists(_filePath))
+                    if (!_disposed)
                     {
-                        File.Delete(_filePath);
+                        _flushTimer?.Dispose();
+                        _writer?.Close();
+                        _fileStream?.Close();
+                        _disposed = true;
+                        
+                        if (File.Exists(_filePath))
+                        {
+                            File.Delete(_filePath);
+                        }
                     }
                 }
             }
-            
-            return Task.CompletedTask;
+            finally
+            {
+                _flushSemaphore.Release();
+            }
         }
 
-        public Task SyncAsync()
+        public async Task SyncAsync()
         {
             if (_disposed)
                 throw new ObjectDisposedException(nameof(WriteAheadLog));
 
-            lock (_writeLock)
-            {
-                _writer.Flush();
-                _fileStream.Flush(true);
-            }
-            
-            return Task.CompletedTask;
+            await FlushBatchAsync();
         }
 
         private void WriteEntry(Entry entry)
         {
-            // Format: [length][key][value_length][value][tombstone][timestamp]
             var keyBytes = Encoding.UTF8.GetBytes(entry.Key);
             
             _writer.Write(keyBytes.Length);
@@ -138,16 +191,13 @@ namespace LSMTree.WAL
 
         private Entry ReadEntry(BinaryReader reader)
         {
-            // Read key
             int keyLength = reader.ReadInt32();
             var keyBytes = reader.ReadBytes(keyLength);
             string key = Encoding.UTF8.GetString(keyBytes);
 
-            // Read value
             int valueLength = reader.ReadInt32();
             var value = reader.ReadBytes(valueLength);
 
-            // Read tombstone and timestamp
             bool tombstone = reader.ReadBoolean();
             long timestamp = reader.ReadInt64();
 
@@ -159,14 +209,32 @@ namespace LSMTree.WAL
             if (_disposed)
                 return;
 
-            lock (_writeLock)
+            _flushSemaphore.Wait();
+            try
             {
-                if (!_disposed)
+                lock (_writeLock)
                 {
-                    _writer?.Dispose();
-                    _fileStream?.Dispose();
-                    _disposed = true;
+                    if (!_disposed)
+                    {
+                        _flushTimer?.Dispose();
+                        
+                        while (_writeQueue.TryDequeue(out var entry))
+                        {
+                            WriteEntry(entry);
+                        }
+                        
+                        _writer?.Flush();
+                        _fileStream?.Flush(true);
+                        _writer?.Dispose();
+                        _fileStream?.Dispose();
+                        _disposed = true;
+                    }
                 }
+            }
+            finally
+            {
+                _flushSemaphore.Release();
+                _flushSemaphore.Dispose();
             }
         }
     }

@@ -18,6 +18,7 @@ namespace LSMTree.Compaction
         private readonly int _dataBlockSize;
         private readonly CompressionType _compressionType;
         private readonly IBlockCache? _blockCache;
+        private readonly ISSTableCache _sstableCache;
         private readonly List<LinkedList<TableHandle>> _levels;
         private readonly object _lock = new object();
         private bool _disposed = false;
@@ -26,13 +27,13 @@ namespace LSMTree.Compaction
         {
             _directory = directory ?? throw new ArgumentNullException(nameof(directory));
             _blockCache = blockCache;
+            _sstableCache = new SSTableCache(200);
             _l0TargetNum = l0TargetNum;
             _levelMultiplier = levelMultiplier;
             _dataBlockSize = dataBlockSize;
             _compressionType = compressionType;
             _levels = new List<LinkedList<TableHandle>>();
 
-            // Ensure directory exists
             if (!Directory.Exists(_directory))
             {
                 Directory.CreateDirectory(_directory);
@@ -104,10 +105,9 @@ namespace LSMTree.Compaction
                             continue;
                     }
 
-                    // Search in the SSTable
                     try
                     {
-                        using var sstable = await SSTable.SSTable.OpenAsync(handle.FilePath, _blockCache);
+                        var sstable = _sstableCache.GetOrOpen(handle.FilePath, _blockCache);
                         var result = await sstable.SearchAsync(key);
                         if (result.found)
                         {
@@ -116,7 +116,6 @@ namespace LSMTree.Compaction
                     }
                     catch (FileNotFoundException)
                     {
-                        // SSTable file was deleted during compaction, continue searching
                         continue;
                     }
                 }
@@ -160,36 +159,31 @@ namespace LSMTree.Compaction
             if (!l0Tables.Any())
                 return;
 
-            // Prepare entries for merging (L1 first, then L0 for proper precedence)
             var allEntries = new List<IEnumerable<Entry>>();
 
-            // Add L1 entries first (older)
             foreach (var handle in l1OverlapTables)
             {
                 try
                 {
-                    using var sstable = await SSTable.SSTable.OpenAsync(handle.FilePath, _blockCache);
+                    var sstable = _sstableCache.GetOrOpen(handle.FilePath, _blockCache);
                     var entries = await sstable.GetAllEntriesAsync();
                     allEntries.Add(entries);
                 }
                 catch (FileNotFoundException)
                 {
-                    // Table was already deleted, skip
                 }
             }
 
-            // Add L0 entries last (newer, higher precedence)
             foreach (var handle in l0Tables)
             {
                 try
                 {
-                    using var sstable = await SSTable.SSTable.OpenAsync(handle.FilePath, _blockCache);
+                    var sstable = _sstableCache.GetOrOpen(handle.FilePath, _blockCache);
                     var entries = await sstable.GetAllEntriesAsync();
                     allEntries.Add(entries);
                 }
                 catch (FileNotFoundException)
                 {
-                    // Table was already deleted, skip
                 }
             }
 
@@ -279,34 +273,30 @@ namespace LSMTree.Compaction
                 nextLevelOverlapTables = FindOverlappingTables(level + 1, selectedTable.MinKey, selectedTable.MaxKey);
             }
 
-            // Prepare entries for merging
             var allEntries = new List<IEnumerable<Entry>>();
 
-            // Add next level entries first (older)
             foreach (var handle in nextLevelOverlapTables)
             {
                 try
                 {
-                    using var sstable = await SSTable.SSTable.OpenAsync(handle.FilePath, _blockCache);
+                    var sstable = _sstableCache.GetOrOpen(handle.FilePath, _blockCache);
                     var entries = await sstable.GetAllEntriesAsync();
                     allEntries.Add(entries);
                 }
                 catch (FileNotFoundException)
                 {
-                    // Table was already deleted, skip
                 }
             }
 
-            // Add current level entry last (newer)
             try
             {
-                using var sstable = await SSTable.SSTable.OpenAsync(selectedTable.FilePath, _blockCache);
+                var sstable = _sstableCache.GetOrOpen(selectedTable.FilePath, _blockCache);
                 var entries = await sstable.GetAllEntriesAsync();
                 allEntries.Add(entries);
             }
             catch (FileNotFoundException)
             {
-                return; // Table was already deleted
+                return;
             }
 
             // Merge entries
@@ -441,6 +431,7 @@ namespace LSMTree.Compaction
                 {
                     try
                     {
+                        _sstableCache.Remove(filePath);
                         if (File.Exists(filePath))
                         {
                             File.Delete(filePath);
@@ -448,7 +439,6 @@ namespace LSMTree.Compaction
                     }
                     catch
                     {
-                        // Ignore deletion errors
                     }
                 }
             });
@@ -458,7 +448,7 @@ namespace LSMTree.Compaction
         {
             if (!_disposed)
             {
-                // Cleanup any resources if needed
+                _sstableCache?.Dispose();
                 _disposed = true;
             }
         }

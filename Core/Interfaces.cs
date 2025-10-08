@@ -59,6 +59,8 @@ namespace LSMTree.Core
         int Size { get; }
 
         Task RecoverAsync();
+
+        Task SyncWalAsync();
     }
 
     public interface IBloomFilter

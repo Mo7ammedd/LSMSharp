@@ -206,11 +206,10 @@ namespace LSMTree
         {
             IMemtable memtableToFlush;
             
-            // Switch to new active memtable
             lock (_memtableLock)
             {
                 if (_activeMemtable.Size == 0)
-                    return; // Nothing to flush
+                    return;
 
                 _activeMemtable.MakeReadOnly();
                 _flushingMemtable = _activeMemtable;
@@ -221,7 +220,11 @@ namespace LSMTree
 
             try
             {
-                // Get all entries from memtable
+                if (memtableToFlush is Memtable.Memtable memtable)
+                {
+                    await memtable.SyncWalAsync();
+                }
+
                 var entries = memtableToFlush.GetAll();
 
                 // Create SSTable file

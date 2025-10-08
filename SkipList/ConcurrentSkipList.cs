@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Threading;
 using LSMTree.Core;
 
 namespace LSMTree.SkipList
@@ -8,11 +9,13 @@ namespace LSMTree.SkipList
     {
         public Entry Entry { get; set; }
         public SkipListNode?[] Next { get; }
+        public readonly ReaderWriterLockSlim Lock;
 
         public SkipListNode(Entry entry, int level)
         {
             Entry = entry;
             Next = new SkipListNode[level];
+            Lock = new ReaderWriterLockSlim();
         }
 
         public SkipListNode(int level) : this(default, level) { }
@@ -24,51 +27,40 @@ namespace LSMTree.SkipList
         private const double Probability = 0.5;
 
         private readonly SkipListNode _head;
-        private readonly Random _random;
-        private readonly object _lock = new object();
-        
         private int _level;
         private int _size;
 
+        [ThreadStatic]
+        private static Random? _threadRandom;
+        private static Random ThreadRandom => _threadRandom ??= new Random(Guid.NewGuid().GetHashCode());
+
         public int Size 
         { 
-            get 
-            { 
-                lock (_lock) 
-                { 
-                    return _size; 
-                } 
-            } 
+            get => Volatile.Read(ref _size);
         }
 
         public bool IsEmpty 
         { 
-            get 
-            { 
-                lock (_lock) 
-                { 
-                    return _size == 0; 
-                } 
-            } 
+            get => Volatile.Read(ref _size) == 0;
         }
 
         public ConcurrentSkipList()
         {
             _head = new SkipListNode(MaxLevel);
-            _random = new Random();
             _level = 1;
             _size = 0;
         }
 
         public void Set(Entry entry)
         {
-            lock (_lock)
-            {
-                var update = new SkipListNode[MaxLevel];
-                var current = _head;
+            var update = new SkipListNode[MaxLevel];
+            var current = _head;
+            int currentLevel = Volatile.Read(ref _level);
 
-                // Find position to insert/update
-                for (int i = _level - 1; i >= 0; i--)
+            _head.Lock.EnterReadLock();
+            try
+            {
+                for (int i = currentLevel - 1; i >= 0; i--)
                 {
                     while (current.Next[i] != null && 
                            string.Compare(current.Next[i]!.Entry.Key, entry.Key, StringComparison.Ordinal) < 0)
@@ -80,24 +72,42 @@ namespace LSMTree.SkipList
 
                 current = current.Next[0];
 
-                // Update existing entry
                 if (current != null && current.Entry.Key == entry.Key)
                 {
-                    _size -= EstimateEntrySize(current.Entry);
-                    current.Entry = entry;
-                    _size += EstimateEntrySize(entry);
+                    current.Lock.EnterWriteLock();
+                    try
+                    {
+                        int oldSize = EstimateEntrySize(current.Entry);
+                        int newSize = EstimateEntrySize(entry);
+                        current.Entry = entry;
+                        Interlocked.Add(ref _size, newSize - oldSize);
+                    }
+                    finally
+                    {
+                        current.Lock.ExitWriteLock();
+                    }
                     return;
                 }
+            }
+            finally
+            {
+                _head.Lock.ExitReadLock();
+            }
 
-                // Insert new entry
-                int newLevel = GetRandomLevel();
-                if (newLevel > _level)
+            int newLevel = GetRandomLevel();
+            
+            _head.Lock.EnterWriteLock();
+            try
+            {
+                currentLevel = Volatile.Read(ref _level);
+                
+                if (newLevel > currentLevel)
                 {
-                    for (int i = _level; i < newLevel; i++)
+                    for (int i = currentLevel; i < newLevel; i++)
                     {
                         update[i] = _head;
                     }
-                    _level = newLevel;
+                    Volatile.Write(ref _level, newLevel);
                 }
 
                 var newNode = new SkipListNode(entry, newLevel);
@@ -107,17 +117,23 @@ namespace LSMTree.SkipList
                     update[i].Next[i] = newNode;
                 }
 
-                _size += EstimateEntrySize(entry) + EstimateNodeOverhead(newLevel);
+                Interlocked.Add(ref _size, EstimateEntrySize(entry) + EstimateNodeOverhead(newLevel));
+            }
+            finally
+            {
+                _head.Lock.ExitWriteLock();
             }
         }
 
         public (bool found, Entry entry) Get(string key)
         {
-            lock (_lock)
-            {
-                var current = _head;
+            var current = _head;
+            int currentLevel = Volatile.Read(ref _level);
 
-                for (int i = _level - 1; i >= 0; i--)
+            _head.Lock.EnterReadLock();
+            try
+            {
+                for (int i = currentLevel - 1; i >= 0; i--)
                 {
                     while (current.Next[i] != null && 
                            string.Compare(current.Next[i]!.Entry.Key, key, StringComparison.Ordinal) < 0)
@@ -130,34 +146,60 @@ namespace LSMTree.SkipList
 
                 if (current != null && current.Entry.Key == key)
                 {
-                    return (true, current.Entry);
+                    current.Lock.EnterReadLock();
+                    try
+                    {
+                        return (true, current.Entry);
+                    }
+                    finally
+                    {
+                        current.Lock.ExitReadLock();
+                    }
                 }
 
                 return (false, default);
+            }
+            finally
+            {
+                _head.Lock.ExitReadLock();
             }
         }
 
         public IEnumerable<Entry> GetAll()
         {
-            lock (_lock)
+            var entries = new List<Entry>();
+            
+            _head.Lock.EnterReadLock();
+            try
             {
-                var entries = new List<Entry>();
                 var current = _head.Next[0];
 
                 while (current != null)
                 {
-                    entries.Add(current.Entry);
+                    current.Lock.EnterReadLock();
+                    try
+                    {
+                        entries.Add(current.Entry);
+                    }
+                    finally
+                    {
+                        current.Lock.ExitReadLock();
+                    }
                     current = current.Next[0];
                 }
 
                 return entries;
+            }
+            finally
+            {
+                _head.Lock.ExitReadLock();
             }
         }
 
         private int GetRandomLevel()
         {
             int level = 1;
-            while (level < MaxLevel && _random.NextDouble() < Probability)
+            while (level < MaxLevel && ThreadRandom.NextDouble() < Probability)
             {
                 level++;
             }
@@ -166,15 +208,15 @@ namespace LSMTree.SkipList
 
         private static int EstimateEntrySize(Entry entry)
         {
-            return sizeof(long) + // timestamp
-                   sizeof(bool) + // tombstone
-                   (entry.Key?.Length ?? 0) * sizeof(char) + // key
-                   (entry.Value?.Length ?? 0); // value
+            return sizeof(long) + 
+                   sizeof(bool) + 
+                   (entry.Key?.Length ?? 0) * sizeof(char) + 
+                   (entry.Value?.Length ?? 0);
         }
 
         private static int EstimateNodeOverhead(int level)
         {
-            return level * IntPtr.Size; // next pointers
+            return level * IntPtr.Size;
         }
     }
 }
