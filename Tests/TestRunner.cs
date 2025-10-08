@@ -30,6 +30,9 @@ namespace LSMTree.Tests
                         case "bloom":
                             BloomFilterBenchmark.RunBenchmark();
                             break;
+                        case "million":
+                            await MillionOpTest.RunAsync();
+                            break;
                         case "all":
                         default:
                             await RunAllTests();
