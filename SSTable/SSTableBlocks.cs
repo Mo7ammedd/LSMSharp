@@ -27,8 +27,8 @@ namespace LSMTree.SSTable
 
         public byte[] Encode()
         {
-            using var stream = new MemoryStream();
-            using var writer = new BinaryWriter(stream);
+            using var uncompressedStream = new MemoryStream();
+            using var writer = new BinaryWriter(uncompressedStream);
 
             string previousKey = string.Empty;
 
@@ -52,15 +52,28 @@ namespace LSMTree.SSTable
                 previousKey = entry.Key;
             }
 
-            var uncompressed = stream.ToArray();
+            var uncompressed = uncompressedStream.ToArray();
             var compressor = CompressionFactory.Create(CompressionType);
-            return compressor.Compress(uncompressed);
+            var compressed = compressor.Compress(uncompressed);
+
+            using var outputStream = new MemoryStream();
+            using var outputWriter = new BinaryWriter(outputStream);
+            outputWriter.Write((byte)CompressionType);
+            outputWriter.Write(compressed);
+            
+            return outputStream.ToArray();
         }
 
         public void Decode(byte[] data)
         {
+            using var stream = new MemoryStream(data);
+            using var reader = new BinaryReader(stream);
+
+            CompressionType = (CompressionType)reader.ReadByte();
+            
+            var compressedData = reader.ReadBytes((int)(stream.Length - stream.Position));
             var compressor = CompressionFactory.Create(CompressionType);
-            var uncompressed = compressor.Decompress(data);
+            var uncompressed = compressor.Decompress(compressedData);
             DecodeEntries(uncompressed);
         }
 

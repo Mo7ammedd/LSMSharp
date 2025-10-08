@@ -186,9 +186,8 @@ namespace LSMTree
             return _levelManager.CompactAsync(0);
         }
 
-        private async Task TriggerFlushAsync()
+        private Task TriggerFlushAsync()
         {
-            // Non-blocking flush trigger
             _ = Task.Run(async () =>
             {
                 try
@@ -197,9 +196,9 @@ namespace LSMTree
                 }
                 catch
                 {
-                    // Log error in production
                 }
             });
+            return Task.CompletedTask;
         }
 
         private async Task FlushMemtableAsync()
@@ -220,23 +219,20 @@ namespace LSMTree
 
             try
             {
-                if (memtableToFlush is Memtable.Memtable memtable)
+                if (memtableToFlush is Memtable.Memtable mt)
                 {
-                    await memtable.SyncWalAsync();
+                    await mt.SyncWalAsync();
                 }
 
                 var entries = memtableToFlush.GetAll();
 
-                // Create SSTable file
                 var timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
                 var sstableFile = Path.Combine(_directory, "levels", $"L0_{timestamp}.sst");
                 
                 await SSTable.SSTable.BuildAsync(sstableFile, entries, 0, _config.DataBlockSize, _config.CompressionType);
 
-                // Add to level manager
                 await _levelManager.AddSSTableAsync(sstableFile);
 
-                // Clean up WAL after successful flush
                 if (memtableToFlush is Memtable.Memtable memtable)
                 {
                     await memtable.DeleteWalAsync();

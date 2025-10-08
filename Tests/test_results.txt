@@ -1,0 +1,125 @@
+LSM-Tree Heavy Test Suite
+========================
+Started at: 10/08/2025 21:11:22
+
+Running complete test suite...
+
+LSM-Tree Functional Tests
+=========================
+Started at: 2025-10-08 21:11:22
+
+1. Basic Operations Test
+-----------------------
+Testing 12 basic operations...
+✓ Inserted 12 records in 8ms
+✓ Verified 12 records in 3ms
+✅ Basic operations: 12/12 tests passed
+   Total time: 15ms, Insert rate: 1500 ops/sec, Read rate: 4000 ops/sec
+
+2. Update Operations Test
+------------------------
+Testing 7 sequential updates on same key...
+✓ Update 1/7: PASS - Value is 'version1' (update: 0ms, verify: 0ms)
+✓ Update 2/7: PASS - Value is 'version2' (update: 0ms, verify: 0ms)
+✓ Update 3/7: PASS - Value is 'version3' (update: 0ms, verify: 0ms)
+✓ Update 4/7: PASS - Value is 'version4' (update: 0ms, verify: 0ms)
+✓ Update 5/7: PASS - Value is 'version5' (update: 0ms, verify: 0ms)
+✓ Update 6/7: PASS - Value is 'version6' (update: 0ms, verify: 0ms)
+✓ Update 7/7: PASS - Value is 'final_version' (update: 0ms, verify: 0ms)
+✓ Flush completed in 42ms
+✅ After flush: PASS - Value is 'final_version'
+   Total time: 55ms, Average update time: 0.0ms
+
+3. Delete Operations Test
+------------------------
+Testing delete operations on 8 records...
+✓ Inserted 8 records in 0ms
+  Before delete - delete1: FOUND
+  Before delete - delete2: FOUND
+  Before delete - delete3: FOUND
+  Before delete - delete4: FOUND
+  Before delete - delete5: FOUND
+  Before delete - delete6: FOUND
+  Before delete - delete7: FOUND
+  Before delete - delete8: FOUND
+✓ After deleting delete1: NOT_FOUND (PASS) - 0ms
+✓ After deleting delete2: NOT_FOUND (PASS) - 0ms
+✓ After deleting delete3: NOT_FOUND (PASS) - 0ms
+✓ After deleting delete4: NOT_FOUND (PASS) - 0ms
+✓ After deleting delete5: NOT_FOUND (PASS) - 0ms
+✓ After deleting delete6: NOT_FOUND (PASS) - 0ms
+✓ After deleting delete7: NOT_FOUND (PASS) - 0ms
+✓ After deleting delete8: NOT_FOUND (PASS) - 0ms
+✓ Delete non-existent key: PASS (no exception) - 0ms
+  After flush - delete1: NOT_FOUND (PASS)
+  After flush - delete2: NOT_FOUND (PASS)
+  After flush - delete3: NOT_FOUND (PASS)
+  After flush - delete4: NOT_FOUND (PASS)
+  After flush - delete5: NOT_FOUND (PASS)
+  After flush - delete6: NOT_FOUND (PASS)
+  After flush - delete7: NOT_FOUND (PASS)
+  After flush - delete8: NOT_FOUND (PASS)
+✅ Delete operations: 8/8 deletions successful, 8/8 persist after flush
+   Total time: 6ms, Flush time: 4ms, Average delete time: 0.0ms
+
+4. Range Query Test
+------------------
+✓ Inserted 100 sorted records in 3ms
+✓ Flushed to SSTables in 2ms
+Testing 8 range queries...
+  Range [range_key_010, range_key_020]: Found 11 records (Expected: 11) - ✓ PASS - 1ms
+  Range [range_key_025, range_key_035]: Found 11 records (Expected: 11) - ✓ PASS - 0ms
+  Range [range_key_050, range_key_055]: Found 6 records (Expected: 6) - ✓ PASS - 0ms
+  Range [range_key_070, range_key_079]: Found 10 records (Expected: 10) - ✓ PASS - 0ms
+  Range [range_key_090, range_key_099]: Found 10 records (Expected: 10) - ✓ PASS - 0ms
+  Range [range_key_000, range_key_099]: Found 100 records (Expected: 100) - ✓ PASS - 0ms
+  Range [range_key_000, range_key_049]: Found 50 records (Expected: 50) - ✓ PASS - 0ms
+  Range [range_key_050, range_key_099]: Found 50 records (Expected: 50) - ✓ PASS - 0ms
+✅ Range queries: 8/8 passed
+   Total time: 8ms, Range query time: 1ms, Average range time: 0.1ms
+
+5. Transaction Consistency Test
+------------------------------
+Testing concurrent consistency with 50 threads...
+  Thread 0 completed in 0ms
+  Thread 40 completed in 0ms
+  Thread 30 completed in 0ms
+  Thread 20 completed in 0ms
+  Thread 10 completed in 0ms
+✓ All 50 concurrent updates completed in 1ms
+✓ Final state verification in 0ms
+  Final state after concurrent updates: update_1
+✅ Consistency test: PASS
+   Total time: 2ms, Average concurrent update rate: 50000 ops/sec
+
+6. Data Integrity Test
+---------------------
+Testing data integrity with 200 records...
+  Inserted 50/200 records...
+  Inserted 100/200 records...
+  Inserted 150/200 records...
+✓ Inserted 200 records in 3ms (66667 ops/sec)
+Testing data before flush/compaction...
+✓ Before flush: 10/10 test records found in 3ms
+Testing data after flush, before compaction...
+✓ After flush: 10/10 test records found in 0ms (flush took 7ms)
+Starting compaction...
+✓ Compaction completed successfully in 19ms
+Testing data after compaction...
+✓ After compaction: 10/10 test records found in 3ms
+
+=== FINAL VERIFICATION ===
+
+Test execution failed: Unsupported compression type: 8
+Stack trace:    at LSMTree.Core.CompressionFactory.Create(CompressionType type) in /home/LSMSharp/Core/Compression.cs:line 92
+   at LSMTree.SSTable.DataBlock.Decode(Byte[] data) in /home/LSMSharp/SSTable/SSTableBlocks.cs:line 75
+   at LSMTree.SSTable.SSTable.ReadDataBlockAsync(BlockHandle handle) in /home/LSMSharp/SSTable/SSTable.cs:line 91
+   at LSMTree.SSTable.SSTable.SearchAsync(String key) in /home/LSMSharp/SSTable/SSTable.cs:line 50
+   at LSMTree.Compaction.LevelManager.SearchAsync(String key) in /home/LSMSharp/Compaction/LevelManager.cs:line 111
+   at LSMTree.LSMTreeDB.GetAsync(String key) in /home/LSMSharp/LSMTreeDB.cs:line 131
+   at LSMTree.Tests.FunctionalTests.DataIntegrityTest(LSMTreeDB db) in /home/LSMSharp/Tests/FunctionalTests.cs:line 492
+   at LSMTree.Tests.FunctionalTests.DataIntegrityTest(LSMTreeDB db) in /home/LSMSharp/Tests/FunctionalTests.cs:line 517
+   at LSMTree.Tests.FunctionalTests.RunAllAsync() in /home/LSMSharp/Tests/FunctionalTests.cs:line 32
+   at LSMTree.Tests.FunctionalTests.RunAllAsync() in /home/LSMSharp/Tests/FunctionalTests.cs:line 39
+   at LSMTree.Tests.TestRunner.RunAllTests() in /home/LSMSharp/Tests/TestRunner.cs:line 60
+   at LSMTree.Tests.TestRunner.Main(String[] args) in /home/LSMSharp/Tests/TestRunner.cs:line 41
