@@ -1,20 +1,20 @@
 LSM-Tree Heavy Test Suite
 ========================
-Started at: 10/08/2025 21:11:22
+Started at: 10/08/2025 21:19:50
 
 Running complete test suite...
 
 LSM-Tree Functional Tests
 =========================
-Started at: 2025-10-08 21:11:22
+Started at: 2025-10-08 21:19:50
 
 1. Basic Operations Test
 -----------------------
 Testing 12 basic operations...
-✓ Inserted 12 records in 8ms
+✓ Inserted 12 records in 3ms
 ✓ Verified 12 records in 3ms
 ✅ Basic operations: 12/12 tests passed
-   Total time: 15ms, Insert rate: 1500 ops/sec, Read rate: 4000 ops/sec
+   Total time: 8ms, Insert rate: 4000 ops/sec, Read rate: 4000 ops/sec
 
 2. Update Operations Test
 ------------------------
@@ -26,9 +26,9 @@ Testing 7 sequential updates on same key...
 ✓ Update 5/7: PASS - Value is 'version5' (update: 0ms, verify: 0ms)
 ✓ Update 6/7: PASS - Value is 'version6' (update: 0ms, verify: 0ms)
 ✓ Update 7/7: PASS - Value is 'final_version' (update: 0ms, verify: 0ms)
-✓ Flush completed in 42ms
+✓ Flush completed in 36ms
 ✅ After flush: PASS - Value is 'final_version'
-   Total time: 55ms, Average update time: 0.0ms
+   Total time: 47ms, Average update time: 0.0ms
 
 3. Delete Operations Test
 ------------------------
@@ -60,37 +60,37 @@ Testing delete operations on 8 records...
   After flush - delete7: NOT_FOUND (PASS)
   After flush - delete8: NOT_FOUND (PASS)
 ✅ Delete operations: 8/8 deletions successful, 8/8 persist after flush
-   Total time: 6ms, Flush time: 4ms, Average delete time: 0.0ms
+   Total time: 8ms, Flush time: 7ms, Average delete time: 0.0ms
 
 4. Range Query Test
 ------------------
-✓ Inserted 100 sorted records in 3ms
-✓ Flushed to SSTables in 2ms
+✓ Inserted 100 sorted records in 2ms
+✓ Flushed to SSTables in 6ms
 Testing 8 range queries...
   Range [range_key_010, range_key_020]: Found 11 records (Expected: 11) - ✓ PASS - 1ms
   Range [range_key_025, range_key_035]: Found 11 records (Expected: 11) - ✓ PASS - 0ms
   Range [range_key_050, range_key_055]: Found 6 records (Expected: 6) - ✓ PASS - 0ms
   Range [range_key_070, range_key_079]: Found 10 records (Expected: 10) - ✓ PASS - 0ms
   Range [range_key_090, range_key_099]: Found 10 records (Expected: 10) - ✓ PASS - 0ms
-  Range [range_key_000, range_key_099]: Found 100 records (Expected: 100) - ✓ PASS - 0ms
+  Range [range_key_000, range_key_099]: Found 100 records (Expected: 100) - ✓ PASS - 1ms
   Range [range_key_000, range_key_049]: Found 50 records (Expected: 50) - ✓ PASS - 0ms
   Range [range_key_050, range_key_099]: Found 50 records (Expected: 50) - ✓ PASS - 0ms
 ✅ Range queries: 8/8 passed
-   Total time: 8ms, Range query time: 1ms, Average range time: 0.1ms
+   Total time: 13ms, Range query time: 2ms, Average range time: 0.2ms
 
 5. Transaction Consistency Test
 ------------------------------
 Testing concurrent consistency with 50 threads...
   Thread 0 completed in 0ms
-  Thread 40 completed in 0ms
-  Thread 30 completed in 0ms
-  Thread 20 completed in 0ms
   Thread 10 completed in 0ms
-✓ All 50 concurrent updates completed in 1ms
+  Thread 20 completed in 0ms
+  Thread 30 completed in 0ms
+  Thread 40 completed in 0ms
+✓ All 50 concurrent updates completed in 2ms
 ✓ Final state verification in 0ms
-  Final state after concurrent updates: update_1
+  Final state after concurrent updates: update_49
 ✅ Consistency test: PASS
-   Total time: 2ms, Average concurrent update rate: 50000 ops/sec
+   Total time: 2ms, Average concurrent update rate: 25000 ops/sec
 
 6. Data Integrity Test
 ---------------------
@@ -98,21 +98,21 @@ Testing data integrity with 200 records...
   Inserted 50/200 records...
   Inserted 100/200 records...
   Inserted 150/200 records...
-✓ Inserted 200 records in 3ms (66667 ops/sec)
+✓ Inserted 200 records in 5ms (40000 ops/sec)
 Testing data before flush/compaction...
 ✓ Before flush: 10/10 test records found in 3ms
 Testing data after flush, before compaction...
-✓ After flush: 10/10 test records found in 0ms (flush took 7ms)
+✓ After flush: 10/10 test records found in 0ms (flush took 9ms)
 Starting compaction...
 ✓ Compaction completed successfully in 19ms
 Testing data after compaction...
-✓ After compaction: 10/10 test records found in 3ms
+✓ After compaction: 10/10 test records found in 1ms
 
 === FINAL VERIFICATION ===
 
-Test execution failed: Unsupported compression type: 8
+Test execution failed: Unsupported compression type: 105
 Stack trace:    at LSMTree.Core.CompressionFactory.Create(CompressionType type) in /home/LSMSharp/Core/Compression.cs:line 92
-   at LSMTree.SSTable.DataBlock.Decode(Byte[] data) in /home/LSMSharp/SSTable/SSTableBlocks.cs:line 75
+   at LSMTree.SSTable.DataBlock.Decode(Byte[] data) in /home/LSMSharp/SSTable/SSTableBlocks.cs:line 77
    at LSMTree.SSTable.SSTable.ReadDataBlockAsync(BlockHandle handle) in /home/LSMSharp/SSTable/SSTable.cs:line 91
    at LSMTree.SSTable.SSTable.SearchAsync(String key) in /home/LSMSharp/SSTable/SSTable.cs:line 50
    at LSMTree.Compaction.LevelManager.SearchAsync(String key) in /home/LSMSharp/Compaction/LevelManager.cs:line 111

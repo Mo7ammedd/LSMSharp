@@ -59,6 +59,7 @@ namespace LSMTree.SSTable
             using var outputStream = new MemoryStream();
             using var outputWriter = new BinaryWriter(outputStream);
             outputWriter.Write((byte)CompressionType);
+            outputWriter.Write(compressed.Length);
             outputWriter.Write(compressed);
             
             return outputStream.ToArray();
@@ -70,8 +71,9 @@ namespace LSMTree.SSTable
             using var reader = new BinaryReader(stream);
 
             CompressionType = (CompressionType)reader.ReadByte();
+            int compressedLength = reader.ReadInt32();
             
-            var compressedData = reader.ReadBytes((int)(stream.Length - stream.Position));
+            var compressedData = reader.ReadBytes(compressedLength);
             var compressor = CompressionFactory.Create(CompressionType);
             var uncompressed = compressor.Decompress(compressedData);
             DecodeEntries(uncompressed);
