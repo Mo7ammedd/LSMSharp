@@ -14,6 +14,7 @@ bld/
 
 # NuGet packages
 *.nupkg
+*.snupkg
 
 # Visual Studio cache files
 *.suo
@@ -32,6 +33,15 @@ lsmdb/
 *.sst
 *.log
 
+# Example and test databases
+example_*/
+*_db/
+
 # OS files
 .DS_Store
 Thumbs.db
+
+# Temporary files
+*.tmp
+*.bak
+*~

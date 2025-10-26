@@ -2,6 +2,68 @@
 
 A high-performance, production-ready implementation of an LSM-Tree (Log-Structured Merge-Tree) storage engine in C# with full ACID guarantees and concurrent access support.
 
+[![Build and Test](https://github.com/Mo7ammedd/LSMSharp/actions/workflows/build-and-test.yml/badge.svg)](https://github.com/Mo7ammedd/LSMSharp/actions/workflows/build-and-test.yml)
+[![NuGet](https://img.shields.io/nuget/v/LSMSharp.svg)](https://www.nuget.org/packages/LSMSharp/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
+## What's New in v1.0
+
+- **Range Scan API**: Efficient async iterator-based range queries
+- **Database Statistics**: Monitor memtable sizes and flush status
+- **XML Documentation**: Complete IntelliSense support for all public APIs
+- **CI/CD Pipeline**: Automated builds and tests via GitHub Actions
+- **NuGet Package**: Ready for distribution via NuGet
+- **Comprehensive Examples**: Range scan demonstrations and usage patterns
+
+## Quick Start
+
+### Installation
+
+```bash
+# Via NuGet (when published)
+dotnet add package LSMSharp
+
+# Or clone and build
+git clone https://github.com/Mo7ammedd/LSMSharp.git
+cd LSMSharp
+dotnet build
+```
+
+### Basic Example
+
+```csharp
+using LSMTree;
+using System.Text;
+
+// Open or create a database
+await using var db = await LSMTreeDB.OpenAsync("./mydb");
+
+// Write data
+await db.SetAsync("user:1", Encoding.UTF8.GetBytes("Alice"));
+
+// Read data
+var (found, value) = await db.GetAsync("user:1");
+if (found)
+    Console.WriteLine(Encoding.UTF8.GetString(value)); // "Alice"
+
+// Range scan
+await foreach (var (key, val) in db.RangeAsync("user:1", "user:9"))
+    Console.WriteLine($"{key} => {Encoding.UTF8.GetString(val)}");
+```
+
+### Running Examples
+
+```bash
+# Run the range scan example
+dotnet run --project LSMTree.csproj rangescan
+
+# Run the main demo
+dotnet run --project LSMTree.csproj
+
+# Run tests
+dotnet test Tests/Tests.csproj
+```
+
 ## Abstract
 
 This implementation provides a complete LSM-Tree database engine optimized for write-heavy workloads while maintaining efficient read performance through intelligent data organization and indexing. The system employs a leveled compaction strategy with background merge processes, probabilistic data structures for query optimization, and write-ahead logging for durability guarantees.
@@ -94,9 +156,19 @@ if (found)
 // Delete keys (using tombstones)
 await db.DeleteAsync("user:2");
 
+// Range scan (NEW in v1.0)
+await foreach (var (key, value) in db.RangeAsync("user:1", "user:9"))
+{
+    Console.WriteLine($"{key} => {Encoding.UTF8.GetString(value)}");
+}
+
 // Manual flush and compaction
 await db.FlushAsync();
 await db.CompactAsync();
+
+// Get database statistics (NEW in v1.0)
+var stats = db.GetDatabaseStats();
+Console.WriteLine($"Memtable size: {stats.TotalMemtableSize} bytes");
 ```
 
 ### Configuration
@@ -439,5 +511,21 @@ LSMTree/                          # Root namespace and primary database class
 - **RocksDB Architecture**: Facebook Engineering (2013). RocksDB: A persistent key-value store for fast storage environments
 - **Skip List Analysis**: Pugh, W. (1990). Skip lists: A probabilistic alternative to balanced trees
 - **Bloom Filter Theory**: Bloom, B. H. (1970). Space/time trade-offs in hash coding with allowable errors
+
+## Documentation
+
+- [API Documentation](API.md) - Complete API reference with examples
+- [Contributing Guide](CONTRIBUTING.md) - How to contribute to the project
+- [Changelog](CHANGELOG.md) - Version history and release notes
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## Contributing
+
+Contributions are welcome! Please read our [Contributing Guide](CONTRIBUTING.md) for details on our code of conduct and the process for submitting pull requests.
+
+## Acknowledgments
 
 This implementation serves as both a production-ready storage engine and an educational reference for understanding LSM-Tree concepts, concurrent data structures, and high-performance systems design principles.
