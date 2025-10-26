@@ -7,28 +7,21 @@ namespace LSMTree
     class Program
     {
         static async Task Main(string[] args)
-        {            if (args.Length > 0)
+        {
+            // Note: Test execution requires running the Tests project separately
+            // Example: dotnet run --project Tests/Tests.csproj
+            if (args.Length > 0)
             {
                 switch (args[0].ToLower())
                 {
-                    case "functional":
-                        await LSMTree.Tests.FunctionalTests.RunAllAsync();
+                    case "test":
+                    case "tests":
+                        Console.WriteLine("To run tests, use: dotnet test Tests/Tests.csproj");
+                        Console.WriteLine("Or run: dotnet run --project Tests/Tests.csproj [functional|performance|stress|bloom]");
                         return;
-                    case "performance":
-                        await LSMTree.Tests.PerformanceTests.RunAllAsync();
-                        return;
-                    case "stress":
-                        await LSMTree.Tests.StressTests.RunAllAsync();
-                        return;
-                    case "bloom":
-                        LSMTree.Tests.BloomFilterBenchmark.RunBenchmark();
-                        return;
-                    case "all-tests":
-                        await LSMTree.Tests.FunctionalTests.RunAllAsync();
-                        Console.WriteLine();
-                        await LSMTree.Tests.PerformanceTests.RunAllAsync();
-                        Console.WriteLine();
-                        await LSMTree.Tests.StressTests.RunAllAsync();
+                    case "rangescan":
+                    case "range":
+                        await LSMTree.Examples.RangeScanExample.RunAsync();
                         return;
                 }
             }

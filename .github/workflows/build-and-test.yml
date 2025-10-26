@@ -1,0 +1,32 @@
+name: Build and Test
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: 8.0.x
+    
+    - name: Restore dependencies
+      run: dotnet restore
+    
+    - name: Build
+      run: dotnet build --configuration Release --no-restore
+    
+    - name: Run Tests
+      run: dotnet test Tests/Tests.csproj --configuration Release --no-build --verbosity normal
+    
+    - name: Run Performance Benchmarks
+      run: dotnet run --project Tests/Tests.csproj --configuration Release performance
+      continue-on-error: true

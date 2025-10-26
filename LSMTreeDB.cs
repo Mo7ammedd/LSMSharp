@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using LSMTree.Core;
@@ -9,6 +11,20 @@ using LSMTree.Compaction;
 
 namespace LSMTree
 {
+    /// <summary>
+    /// The main LSM-Tree storage engine implementation providing ACID guarantees and concurrent access.
+    /// </summary>
+    /// <remarks>
+    /// This class implements a Log-Structured Merge-Tree database with the following features:
+    /// <list type="bullet">
+    /// <item>Write-ahead logging for durability</item>
+    /// <item>In-memory memtables with automatic flushing</item>
+    /// <item>Leveled compaction strategy</item>
+    /// <item>Bloom filters for efficient key lookups</item>
+    /// <item>Block-based compression</item>
+    /// <item>Concurrent read/write support</item>
+    /// </list>
+    /// </remarks>
     public class LSMTreeDB : ILSMTree, IAsyncDisposable
     {
         private readonly string _directory;
@@ -48,6 +64,13 @@ namespace LSMTree
             _activeMemtable = CreateNewMemtable();
         }
 
+        /// <summary>
+        /// Opens or creates an LSM-Tree database at the specified directory.
+        /// </summary>
+        /// <param name="directory">The directory path where database files will be stored.</param>
+        /// <param name="config">Optional configuration settings. If null, default configuration is used.</param>
+        /// <returns>A task that returns an opened LSMTreeDB instance.</returns>
+        /// <exception cref="ArgumentNullException">Thrown when directory is null.</exception>
         public static async Task<LSMTreeDB> OpenAsync(
             string directory, 
             LSMConfiguration? config = null)
@@ -57,6 +80,14 @@ namespace LSMTree
             return db;
         }
 
+        /// <summary>
+        /// Asynchronously sets a key-value pair in the database.
+        /// </summary>
+        /// <param name="key">The key to set. Must not be null or empty.</param>
+        /// <param name="value">The value to associate with the key.</param>
+        /// <returns>A task representing the asynchronous operation.</returns>
+        /// <exception cref="ArgumentException">Thrown when key is null or empty.</exception>
+        /// <exception cref="ObjectDisposedException">Thrown when the database has been disposed.</exception>
         public async Task SetAsync(string key, byte[] value)
         {
             if (_disposed)
@@ -93,6 +124,12 @@ namespace LSMTree
             }
         }
 
+        /// <summary>
+        /// Asynchronously retrieves the value associated with the specified key.
+        /// </summary>
+        /// <param name="key">The key to retrieve.</param>
+        /// <returns>A task containing a tuple with a boolean indicating if the key was found and the associated value.</returns>
+        /// <exception cref="ObjectDisposedException">Thrown when the database has been disposed.</exception>
         public async Task<(bool found, byte[] value)> GetAsync(string key)
         {
             if (_disposed)
@@ -137,6 +174,13 @@ namespace LSMTree
             return (false, Array.Empty<byte>());
         }
 
+        /// <summary>
+        /// Asynchronously deletes a key from the database by writing a tombstone marker.
+        /// </summary>
+        /// <param name="key">The key to delete. Must not be null or empty.</param>
+        /// <returns>A task representing the asynchronous operation.</returns>
+        /// <exception cref="ArgumentException">Thrown when key is null or empty.</exception>
+        /// <exception cref="ObjectDisposedException">Thrown when the database has been disposed.</exception>
         public async Task DeleteAsync(string key)
         {
             if (_disposed)
@@ -162,6 +206,11 @@ namespace LSMTree
             }
         }
 
+        /// <summary>
+        /// Asynchronously flushes the active memtable to disk as an SSTable.
+        /// </summary>
+        /// <returns>A task representing the asynchronous operation.</returns>
+        /// <exception cref="ObjectDisposedException">Thrown when the database has been disposed.</exception>
         public async Task FlushAsync()
         {
             if (_disposed)
@@ -178,12 +227,98 @@ namespace LSMTree
             }
         }
 
+        /// <summary>
+        /// Asynchronously triggers compaction of SSTables to merge and eliminate obsolete data.
+        /// </summary>
+        /// <returns>A task representing the asynchronous operation.</returns>
+        /// <exception cref="ObjectDisposedException">Thrown when the database has been disposed.</exception>
         public Task CompactAsync()
         {
             if (_disposed)
                 throw new ObjectDisposedException(nameof(LSMTreeDB));
 
             return _levelManager.CompactAsync(0);
+        }
+
+        /// <summary>
+        /// Asynchronously performs a range scan between the specified start and end keys (inclusive).
+        /// </summary>
+        /// <param name="startKey">The starting key of the range (inclusive). Must not be null or empty.</param>
+        /// <param name="endKey">The ending key of the range (inclusive). Must not be null or empty.</param>
+        /// <returns>An async enumerable of key-value pairs within the range, sorted by key.</returns>
+        /// <exception cref="ArgumentException">Thrown when startKey or endKey is null/empty, or when startKey > endKey.</exception>
+        /// <exception cref="ObjectDisposedException">Thrown when the database has been disposed.</exception>
+        public async IAsyncEnumerable<(string key, byte[] value)> RangeAsync(string startKey, string endKey)
+        {
+            if (_disposed)
+                throw new ObjectDisposedException(nameof(LSMTreeDB));
+
+            if (string.IsNullOrEmpty(startKey))
+                throw new ArgumentException("Start key cannot be null or empty", nameof(startKey));
+
+            if (string.IsNullOrEmpty(endKey))
+                throw new ArgumentException("End key cannot be null or empty", nameof(endKey));
+
+            if (string.CompareOrdinal(startKey, endKey) > 0)
+                throw new ArgumentException("Start key must be less than or equal to end key");
+
+            // Collect entries from all sources
+            var allEntries = new Dictionary<string, Entry>();
+
+            // Get snapshots of memtables
+            IMemtable activeMemtable;
+            IMemtable? flushingMemtable;
+            
+            lock (_memtableLock)
+            {
+                activeMemtable = _activeMemtable;
+                flushingMemtable = _flushingMemtable;
+            }
+
+            // Collect from active memtable
+            foreach (var entry in activeMemtable.GetAll())
+            {
+                if (string.CompareOrdinal(entry.Key, startKey) >= 0 && 
+                    string.CompareOrdinal(entry.Key, endKey) <= 0)
+                {
+                    allEntries[entry.Key] = entry;
+                }
+            }
+
+            // Collect from flushing memtable
+            if (flushingMemtable != null)
+            {
+                foreach (var entry in flushingMemtable.GetAll())
+                {
+                    if (string.CompareOrdinal(entry.Key, startKey) >= 0 && 
+                        string.CompareOrdinal(entry.Key, endKey) <= 0)
+                    {
+                        if (!allEntries.ContainsKey(entry.Key) || entry.Timestamp > allEntries[entry.Key].Timestamp)
+                        {
+                            allEntries[entry.Key] = entry;
+                        }
+                    }
+                }
+            }
+
+            // Collect from SSTables through level manager
+            var sstableEntries = await _levelManager.RangeScanAsync(startKey, endKey);
+            foreach (var entry in sstableEntries)
+            {
+                if (!allEntries.ContainsKey(entry.Key) || entry.Timestamp > allEntries[entry.Key].Timestamp)
+                {
+                    allEntries[entry.Key] = entry;
+                }
+            }
+
+            // Return sorted, non-tombstone entries
+            foreach (var kvp in allEntries.OrderBy(e => e.Key))
+            {
+                if (!kvp.Value.Tombstone)
+                {
+                    yield return (kvp.Key, kvp.Value.Value);
+                }
+            }
         }
 
         private Task TriggerFlushAsync()
@@ -345,19 +480,77 @@ namespace LSMTree
             }
         }
 
+        /// <summary>
+        /// Gets the current cache statistics if block caching is enabled.
+        /// </summary>
+        /// <returns>Cache statistics or null if caching is disabled.</returns>
         public CacheStats? GetCacheStats()
         {
             return _blockCache?.GetStats();
         }
 
+        /// <summary>
+        /// Clears the block cache, freeing cached memory.
+        /// </summary>
         public void ClearCache()
         {
             _blockCache?.Clear();
         }
 
+        /// <summary>
+        /// Gets the current configuration of the database.
+        /// </summary>
+        /// <returns>The LSM configuration.</returns>
         public LSMConfiguration GetConfiguration()
         {
             return _config;
         }
+
+        /// <summary>
+        /// Gets statistics about the current state of the database.
+        /// </summary>
+        /// <returns>Database statistics including memtable size and SSTable counts.</returns>
+        public DatabaseStats GetDatabaseStats()
+        {
+            lock (_memtableLock)
+            {
+                var activeMemtableSize = _activeMemtable?.Size ?? 0;
+                var flushingMemtableSize = _flushingMemtable?.Size ?? 0;
+                
+                return new DatabaseStats
+                {
+                    ActiveMemtableSize = activeMemtableSize,
+                    FlushingMemtableSize = flushingMemtableSize,
+                    TotalMemtableSize = activeMemtableSize + flushingMemtableSize,
+                    IsFlushingInProgress = _flushingMemtable != null
+                };
+            }
+        }
+    }
+
+    /// <summary>
+    /// Represents statistics about the current state of the database.
+    /// </summary>
+    public struct DatabaseStats
+    {
+        /// <summary>
+        /// Size of the active memtable in bytes.
+        /// </summary>
+        public int ActiveMemtableSize { get; set; }
+
+        /// <summary>
+        /// Size of the flushing memtable in bytes (0 if no flush is in progress).
+        /// </summary>
+        public int FlushingMemtableSize { get; set; }
+
+        /// <summary>
+        /// Total memtable size (active + flushing) in bytes.
+        /// </summary>
+        public int TotalMemtableSize { get; set; }
+
+        /// <summary>
+        /// Indicates whether a flush operation is currently in progress.
+        /// </summary>
+        public bool IsFlushingInProgress { get; set; }
     }
 }

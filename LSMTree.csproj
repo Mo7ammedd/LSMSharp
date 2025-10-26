@@ -5,13 +5,36 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <LangVersion>latest</LangVersion>
+    
+    <!-- NuGet Package Metadata -->
+    <PackageId>LSMSharp</PackageId>
+    <Version>1.0.0</Version>
+    <Authors>Mo7ammedd</Authors>
+    <Company>LSMSharp</Company>
+    <Product>LSMSharp</Product>
+    <Description>A high-performance, production-ready implementation of an LSM-Tree (Log-Structured Merge-Tree) storage engine in C# with full ACID guarantees and concurrent access support.</Description>
+    <PackageTags>lsm-tree;database;storage-engine;key-value;nosql;embedded-database</PackageTags>
+    <RepositoryUrl>https://github.com/Mo7ammedd/LSMSharp</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageProjectUrl>https://github.com/Mo7ammedd/LSMSharp</PackageProjectUrl>
+    
+    <!-- Documentation -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <DocumentationFile>bin\$(Configuration)\$(TargetFramework)\LSMSharp.xml</DocumentationFile>
   </PropertyGroup>
+  
   <ItemGroup>
     <PackageReference Include="System.Threading.Tasks.Extensions" Version="4.5.4" />
   </ItemGroup>
 
   <ItemGroup>
     <Compile Remove="Tests/**/*.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" />
   </ItemGroup>
 
 </Project>

@@ -124,6 +124,61 @@ namespace LSMTree.Compaction
             return (false, default);
         }
 
+        public async Task<List<Entry>> RangeScanAsync(string startKey, string endKey)
+        {
+            if (_disposed)
+                throw new ObjectDisposedException(nameof(LevelManager));
+
+            var resultEntries = new Dictionary<string, Entry>();
+            
+            List<LinkedList<TableHandle>> levelsCopy;
+            lock (_lock)
+            {
+                levelsCopy = _levels.Select(level => new LinkedList<TableHandle>(level)).ToList();
+            }
+
+            // Search all levels and collect matching entries
+            for (int level = 0; level < levelsCopy.Count; level++)
+            {
+                foreach (var handle in levelsCopy[level])
+                {
+                    // Check if table's key range overlaps with query range
+                    if (!string.IsNullOrEmpty(handle.MinKey) && !string.IsNullOrEmpty(handle.MaxKey))
+                    {
+                        // Skip if table range doesn't overlap with query range
+                        if (string.Compare(handle.MaxKey, startKey, StringComparison.Ordinal) < 0 ||
+                            string.Compare(handle.MinKey, endKey, StringComparison.Ordinal) > 0)
+                            continue;
+                    }
+
+                    try
+                    {
+                        var sstable = _sstableCache.GetOrOpen(handle.FilePath, _blockCache);
+                        var entries = await sstable.GetAllEntriesAsync();
+                        
+                        foreach (var entry in entries)
+                        {
+                            if (string.CompareOrdinal(entry.Key, startKey) >= 0 && 
+                                string.CompareOrdinal(entry.Key, endKey) <= 0)
+                            {
+                                // Keep the newest version of each key
+                                if (!resultEntries.ContainsKey(entry.Key) || entry.Timestamp > resultEntries[entry.Key].Timestamp)
+                                {
+                                    resultEntries[entry.Key] = entry;
+                                }
+                            }
+                        }
+                    }
+                    catch (FileNotFoundException)
+                    {
+                        continue;
+                    }
+                }
+            }
+
+            return resultEntries.Values.ToList();
+        }
+
         public async Task CompactAsync(int level)
         {
             if (level == 0)
